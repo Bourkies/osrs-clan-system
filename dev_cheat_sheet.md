@@ -3,18 +3,21 @@
 This document contains quick copy-paste commands for managing the Docker containers and manually triggering individual scripts in both Dev and Prod environments.
 
 ## 🐳 Docker Management
+*If on the live Ubuntu server, ensure you are in the project folder first:*
+`cd ~/ai-server/osrs-clan-system`
+
 *Run these from the root directory (`osrs-clan-system/`)*
 
 **Start the ecosystem (in the background):**
-`docker-compose up -d --build`
+`docker compose up -d --build`
 
 **Stop the ecosystem:**
-`docker-compose down`
+`docker compose down`
 
 **View real-time logs for a specific container:**
-`docker-compose logs -f backend_auditor`
-`docker-compose logs -f etl_pipeline`
-`docker-compose logs -f dashboard_ui`
+`docker compose logs -f backend_auditor`
+`docker compose logs -f etl_pipeline`
+`docker compose logs -f dashboard_ui`
 
 ---
 
@@ -22,24 +25,24 @@ This document contains quick copy-paste commands for managing the Docker contain
 *The Auditor runs autonomously on a cron schedule, but you can safely trigger it manually via Docker.*
 
 **Standard Run:**
-`docker-compose exec backend_auditor python run_auditor.py`
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py`
 
 **Specialized Runs (Using Flags):**
 Force clear and refresh the Wise Old Man cache:
-`docker-compose exec backend_auditor python run_auditor.py --force-wom`
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --force-wom`
 
 Run full sync and audit, but DO NOT post to the Discord webhook:
-`docker-compose exec backend_auditor python run_auditor.py --no-webhook`
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --no-webhook`
 
 Sync Discord and WOM to the database, but skip audits completely:
-`docker-compose exec backend_auditor python run_auditor.py --sync-only`
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --sync-only`
 
 **CLI Admin Tools:**
 Run the Account Linker (Fuzzy match unlinked accounts):
-`docker-compose exec backend_auditor python account_linker.py`
+`docker compose exec backend_auditor python backend_auditor/account_linker.py`
 
 Run the Rank Matcher (Bulk-assign missing clan ranks):
-`docker-compose exec backend_auditor python rank_matcher.py`
+`docker compose exec backend_auditor python backend_auditor/rank_matcher.py`
 
 ---
 
@@ -47,26 +50,26 @@ Run the Rank Matcher (Bulk-assign missing clan ranks):
 *The ETL pipeline runs autonomously, but individual steps can be executed manually for debugging or backfilling.*
 
 **Run the Full Pipeline (Safely handled via Smart Lock):**
-`docker-compose exec etl_pipeline python src/run_etl.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/run_etl.py`
 
 **Run Individual ETL Steps:**
 1. Fetch data from Discord (Uses time_settings in config.toml):
-`docker-compose exec etl_pipeline python src/1_fetch_data.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/1_fetch_data.py`
 
 2. Fetch dynamic item prices from the OSRS Wiki API:
-`docker-compose exec etl_pipeline python src/2_fetch_item_prices.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/2_fetch_item_prices.py`
 
 3. Parse raw chat/broadcasts into normalized tables:
-`docker-compose exec etl_pipeline python src/3_parse_engine.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/3_parse_engine.py`
 
 4. Run the Roster Enricher (Link Discord IDs to RSNs via Auditor JSON):
-`docker-compose exec etl_pipeline python src/4_enrich_roster.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/4_enrich_roster.py`
 
 5. Transform data into the dashboard-optimized SQLite databases (Blue/Green):
-`docker-compose exec etl_pipeline python src/3_transform_data.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/5_transform_data.py`
 
 6. Update the Personal Bests (PBs) Discord channel:
-`docker-compose exec etl_pipeline python src/6_post_pbs_to_discord.py`
+`docker compose exec etl_pipeline python etl_pipeline/src/6_post_pbs_to_discord.py`
 
 ---
 

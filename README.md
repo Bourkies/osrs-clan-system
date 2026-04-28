@@ -53,13 +53,13 @@ Because this system relies heavily on Docker and host-mapped volumes, deploying 
    * `config.toml`: Main configuration for the ETL pipeline.
    * `historical_collection_logs.toml`: Tracks initial clan collection log counts.
 4. **Start the Ecosystem:** Run Docker Compose to build the images and spin up the containers in the background.
-   `docker-compose up -d --build`
+   `docker compose up -d --build`
 
 
 ### 2. Updating the Live Server
 When you make changes to the codebase locally and push them to your repository, updating the live server takes seconds and results in **zero data loss** (since your databases and caches are safely mapped to the host machine).
 `git pull`
-`docker-compose up -d --build`
+`docker compose up -d --build`
 
 Docker will automatically detect which containers had code changes, shut them down gracefully, rebuild the specific image, and spin them back up.
 
@@ -84,10 +84,10 @@ To safely expose the Streamlit Dashboard to the public web without opening any f
 2. Configure your **Public Hostname** (e.g., `clan.yourdomain.com`).
 3. Under **Service**, configure the following settings:
    * **Type:** `HTTP`
-   * **URL:** `osrs_dashboard_ui:8501`
+   * **URL:** `http://osrs_dashboard_ui:8501`
 4. Click **Save Tunnel**.
 
-When you spin up the Docker ecosystem (`docker-compose up -d`), the `cloudflared` container will automatically read the token from your `.env` file, establish a secure outbound connection to Cloudflare, and proxy traffic seamlessly to your dashboard—completely isolating it from the public internet!
+When you spin up the Docker ecosystem (`docker compose up -d`), the `cloudflared` container will automatically read the token from your `.env` file, establish a secure outbound connection to Cloudflare, and proxy traffic seamlessly to your dashboard—completely isolating it from the public internet!
 
 ## External Assets Setup (Action Required)
 
