@@ -1,0 +1,82 @@
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  let currentActiveGroup = null;
+  let currentWomResult = null;
+  let currentSearchBtn = null;
+
+  // Delegate events for dynamically added Account blocks
+  document.getElementById('accounts-container').addEventListener('click', function(e) {
+    
+    // --- Search Button Click ---
+    if (e.target.classList.contains('search-wom-btn')) {
+      currentActiveGroup = e.target.closest('.account-group');
+      currentSearchBtn = e.target;
+      
+      const rsnInput = currentActiveGroup.querySelector('.rsn-input');
+      const currentName = rsnInput.value.trim();
+      
+      document.getElementById('wom-search-input').value = currentName;
+      $('#wom-search-modal').modal('show');
+    }
+  });
+
+  // Handle Enter Key in Search Modal
+  document.getElementById('wom-search-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') document.getElementById('btn-execute-wom-search').click();
+  });
+
+  // Execute search from modal
+  document.getElementById('btn-execute-wom-search').addEventListener('click', function() {
+    const username = document.getElementById('wom-search-input').value.trim();
+    const statusLabel = currentActiveGroup.querySelector('.wom-search-status');
+
+    if (!username) return;
+
+    $('#wom-search-modal').modal('hide');
+    
+    currentSearchBtn.disabled = true;
+    currentSearchBtn.textContent = '...';
+    statusLabel.textContent = 'Searching Wise Old Man...';
+    statusLabel.className = 'wom-search-status text-info';
+
+    google.script.run.withSuccessHandler(function(res) {
+      currentSearchBtn.disabled = false;
+      currentSearchBtn.textContent = 'Look Up';
+      if (res.success) {
+        currentWomResult = res;
+        document.getElementById('wom-confirm-name').textContent = res.displayName;
+        document.getElementById('wom-confirm-id').textContent = res.womId;
+        document.getElementById('wom-confirm-clan').textContent = res.clan;
+        document.getElementById('wom-confirm-rank').textContent = res.rank;
+        $('#wom-confirm-modal').modal('show');
+      } else {
+        statusLabel.textContent = res.message;
+        statusLabel.className = 'wom-search-status text-danger';
+      }
+    }).withFailureHandler(function(err) {
+      currentSearchBtn.disabled = false;
+      currentSearchBtn.textContent = 'Look Up';
+      statusLabel.textContent = 'Error: ' + err.message;
+      statusLabel.className = 'wom-search-status text-danger';
+    }).searchWomPlayer(username);
+  });
+
+  // Apply details to form
+  document.getElementById('btn-confirm-wom-apply').addEventListener('click', function() {
+    if (!currentActiveGroup || !currentWomResult) return;
+    
+    currentActiveGroup.querySelector('.rsn-input').value = currentWomResult.displayName;
+    currentActiveGroup.querySelector('.wom-id').value = currentWomResult.womId;
+    
+    const clanInput = currentActiveGroup.querySelector('.account-clan');
+    if (clanInput) { clanInput.value = currentWomResult.clan; clanInput.classList.remove('text-muted'); clanInput.classList.add('text-success', 'font-weight-bold'); }
+    const rankInput = currentActiveGroup.querySelector('.account-rank');
+    if (rankInput) { rankInput.value = currentWomResult.rank; rankInput.classList.remove('text-muted'); }
+
+    const statusLabel = currentActiveGroup.querySelector('.wom-search-status');
+    statusLabel.textContent = 'WOM ID mapped! (Info fully syncs on next bot run)';
+    statusLabel.className = 'wom-search-status text-success';
+    $('#wom-confirm-modal').modal('hide');
+  });
+});
+</script>

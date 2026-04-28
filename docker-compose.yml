@@ -1,0 +1,53 @@
+services:
+  backend_auditor:
+    build:
+      context: .
+      dockerfile: backend_auditor/Dockerfile
+    container_name: osrs_backend_auditor
+    restart: unless-stopped
+    environment:
+      - SHARED_DATA_DIR=/app/shared_data
+      - SHARED_CONFIG_DIR=/app/shared_config
+      - SHARED_SECRETS_DIR=/app/shared_secrets
+    volumes:
+      - ./shared_data:/app/shared_data
+      - ./shared_config:/app/shared_config
+      - ./shared_secrets:/app/shared_secrets
+
+  etl_pipeline:
+    build:
+      context: .
+      dockerfile: etl_pipeline/Dockerfile
+    container_name: osrs_etl_pipeline
+    restart: unless-stopped
+    environment:
+      - SHARED_DATA_DIR=/app/shared_data
+      - SHARED_CONFIG_DIR=/app/shared_config
+      - SHARED_SECRETS_DIR=/app/shared_secrets
+    volumes:
+      - ./shared_data:/app/shared_data
+      - ./shared_config:/app/shared_config
+      - ./shared_secrets:/app/shared_secrets
+
+  dashboard_ui:
+    build:
+      context: .
+      dockerfile: dashboard_ui/Dockerfile
+    container_name: osrs_dashboard_ui
+    restart: unless-stopped
+    volumes:
+      - ./shared_data:/app/shared_data
+      - ./shared_config:/app/shared_config
+    environment:
+      - LOCAL_DB_PATH_1=/app/shared_data/databases/optimised_data.db
+      - LOCAL_DB_PATH_2=/app/shared_data/databases/optimised_data_alt.db
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: osrs_cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    env_file:
+      - ./shared_secrets/.env
+    depends_on:
+      - dashboard_ui

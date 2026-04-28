@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+.vscode/
+.idea/
+.DS_Store
+
+# Secrets (NEVER UPLOAD THESE)
+shared_secrets/*
+!shared_secrets/*.example
+!shared_secrets/*.example.toml
+!shared_secrets/.env.example
+
+shared_data/databases/*
+shared_data/backups/*

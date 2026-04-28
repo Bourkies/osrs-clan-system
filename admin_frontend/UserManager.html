@@ -1,0 +1,405 @@
+<!-- Add Member Modal -->
+<div class="modal fade" id="add-member-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Member</h5>
+        <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 mb-3">
+          <small><strong>Tip:</strong> It is highly recommended to wait for the daily bot run to automatically discover and add new Discord members. Only use this manual creation if you need to urgently assign ranks or link RSNs before the next sync.</small>
+        </div>
+        <div class="form-group mb-0">
+          <label for="new-discord-id">Discord ID (17-19 Digits)</label>
+          <input type="text" class="form-control" id="new-discord-id" placeholder="e.g., 123456789012345678" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+          <small class="text-danger d-none" id="add-error-msg">Invalid Discord ID format.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-check-new-member">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit/View User Modal -->
+<div class="modal fade" id="edit-user-modal" tabindex="-1" data-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="edit-user-form">
+        <div class="modal-header">
+          <h5 class="modal-title" id="edit-modal-title">Edit Member</h5>
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+        </div>
+        <div class="modal-body">
+          <div id="edit-status-message" class="mb-3 d-none"></div>
+          
+          <h5 class="border-bottom pb-2">Discord Information</h5>
+          <div class="row">
+            <div class="col-md-6 form-group">
+              <label for="edit-discord-id">Discord ID</label>
+              <input type="text" class="form-control bg-light" id="edit-discord-id" name="Discord ID" readonly>
+            </div>
+            <div class="col-md-6 form-group">
+              <label for="edit-discord-name">Discord Name</label>
+              <input type="text" class="form-control bg-light" id="edit-discord-name" readonly>
+            </div>
+            <div class="col-md-12 form-group">
+              <label for="edit-user-notes">User Notes / Known As</label>
+              <textarea class="form-control auto-resize" id="edit-user-notes" name="User Notes" placeholder="e.g., Previously known as 'Zezima', goes by 'Zez'." rows="2" style="max-height: 150px; overflow-y: auto; resize: none;"></textarea>
+            </div>
+            <div class="col-md-6 form-group">
+              <label for="edit-discord-ranks">Discord Ranks</label>
+              <input type="text" class="form-control bg-light" id="edit-discord-ranks" readonly>
+            </div>
+            <div class="col-md-6 form-group">
+              <label for="edit-join-date">Join Date</label>
+              <input type="text" class="form-control bg-light" id="edit-join-date" readonly>
+            </div>
+          </div>
+
+          <h5 class="border-bottom pb-2 mt-3">Clan Information</h5>
+          <div class="row">
+            <div class="col-md-6 form-group">
+              <label for="edit-clan-rank">Clan Rank</label>
+              <select class="form-control" id="edit-clan-rank" name="Clan Rank">
+                <option value="">-- No Rank Assigned --</option>
+              </select>
+            </div>
+            <div class="col-md-6 form-group">
+              <label for="edit-clan-rank-date">Clan Rank Date</label>
+              <input type="text" class="form-control bg-light" id="edit-clan-rank-date" readonly>
+            </div>
+            <div class="col-md-6 form-group">
+              <label for="edit-game-rank">In-Game Ranks (Main Clan)</label>
+              <input type="text" class="form-control bg-light" id="edit-game-rank" readonly title="Filtered to only show ranks from your target clan">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-12 form-group">
+              <label for="edit-rank-history">Rank History</label>
+              <input type="text" class="form-control bg-light" id="edit-rank-history" readonly>
+            </div>
+          </div>
+
+          <h5 class="border-bottom pb-2 mt-3">System & Flags</h5>
+          <div class="row">
+            <div class="col-md-12 form-group">
+              <label for="edit-system-flags">System Flags</label>
+              <input type="text" class="form-control bg-light" id="edit-system-flags" readonly>
+            </div>
+            <div class="col-md-12 form-group">
+              <label>Admin Flags</label>
+              <div class="row">
+                <div class="col-md-5">
+                  <label class="text-muted mb-1"><small>Available Flags</small></label>
+                  <select multiple class="form-control" id="available-admin-flags" style="height: 120px;"></select>
+                </div>
+                <div class="col-md-2 d-flex flex-column justify-content-center px-2">
+                  <button type="button" class="btn btn-sm btn-primary mb-1" id="btn-add-admin-flag" title="Add Flag">&gt;&gt;</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-rem-admin-flag" title="Remove Flag">&lt;&lt;</button>
+                </div>
+                <div class="col-md-5">
+                  <label class="text-primary mb-1"><small>Assigned Flags</small></label>
+                  <select multiple class="form-control border-primary" id="edit-admin-flags" style="height: 120px;"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mt-4 mb-3">
+            <h5 class="mb-0">RSNs</h5>
+            <button type="button" class="btn btn-info btn-sm" id="add-account-btn">+ Add RSN</button>
+          </div>
+          <div id="accounts-container">
+            <!-- Dynamic account fields -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-member">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Concurrency Conflict Modal -->
+<div class="modal fade" id="conflict-modal" tabindex="-1" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Data Conflict Detected</h5>
+        <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <div class="modal-body">
+        <p>Someone else has modified this user's data since you opened this window.</p>
+        <p><strong>Do you want to overwrite their changes with yours, or discard your changes and reload the latest data?</strong></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-conflict-reload">Discard Mine & Reload</button>
+        <button type="button" class="btn btn-danger" id="btn-conflict-overwrite">Force Overwrite</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+  let originalClanRank = '';
+  let currentRankHistory = '';
+  let initialLoadedData = null; // Used for concurrency check
+  let pendingFormData = null;   // Used if we hit a conflict
+
+  function addAccountField(womId = '', note = '', rsn = '', clan = '', rank = '', historyHtml = '') {
+    const newAccountFields = `
+      <div class="card mb-3 account-group">
+        <div class="card-header d-flex justify-content-between align-items-center bg-light py-2">
+          <h6 class="mb-0">RSN Profile</h6>
+          <button type="button" class="btn btn-sm btn-outline-danger remove-account-btn">&times; Remove</button>
+        </div>
+        <div class="card-body py-2">
+          <div class="row">
+            <div class="col-md-5 form-group">
+              <label>In-Game Name (RSN)</label>
+              <input type="text" class="form-control rsn-input bg-light" placeholder="Use Look Up..." value="${rsn}" readonly>
+              <small class="wom-search-status text-muted"></small>
+            </div>
+            <div class="col-md-2 form-group">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary btn-block search-wom-btn" type="button">Look Up</button>
+            </div>
+            <div class="col-md-5 form-group">
+              <label>WOM ID</label>
+              <input type="text" class="form-control wom-id" placeholder="e.g., 12345" value="${womId}" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-4 form-group mb-0">
+              <label>Account Notes</label>
+              <textarea class="form-control account-note auto-resize" placeholder="e.g., Main, Iron Alt" rows="2" style="max-height: 100px; overflow-y: auto; resize: none;">${note}</textarea>
+            </div>
+            <div class="col-md-4 form-group mb-0">
+              <label>Account Clan</label>
+              <input type="text" class="form-control account-clan bg-light text-muted" value="${clan}" readonly placeholder="Pending Sync...">
+            </div>
+            <div class="col-md-4 form-group mb-0">
+              <label>Account Rank</label>
+              <input type="text" class="form-control account-rank bg-light text-muted" value="${rank}" readonly placeholder="Pending Sync...">
+            </div>
+          </div>
+          ${historyHtml}
+        </div>
+      </div>
+    `;
+    document.getElementById('accounts-container').insertAdjacentHTML('beforeend', newAccountFields);
+  }
+
+  document.getElementById('add-account-btn').addEventListener('click', function() { addAccountField(); });
+
+  document.getElementById('accounts-container').addEventListener('click', function(e) {
+    if (e.target.classList.contains('remove-account-btn')) {
+      const confirmStr = window.prompt("Type 'DELETE' to confirm removing this account profile:");
+      if (confirmStr && confirmStr.trim().toUpperCase() === 'DELETE') e.target.closest('.account-group').remove();
+    }
+  });
+
+  document.getElementById('btn-open-add-modal').addEventListener('click', function() {
+    document.getElementById('new-discord-id').value = '';
+    document.getElementById('add-error-msg').classList.add('d-none');
+    $('#add-member-modal').modal('show');
+  });
+
+  document.getElementById('btn-check-new-member').addEventListener('click', function() {
+    const discordId = document.getElementById('new-discord-id').value.trim();
+    const btn = $(this);
+    if (!/^\d{17,19}$/.test(discordId)) { document.getElementById('add-error-msg').classList.remove('d-none'); return; }
+    document.getElementById('add-error-msg').classList.add('d-none');
+    btn.prop('disabled', true).text('Checking...');
+    showLoader();
+    google.script.run.withSuccessHandler(function(result) {
+      btn.prop('disabled', false).text('Continue'); hideLoader(); $('#add-member-modal').modal('hide');
+      openEditModal(result, discordId);
+    }).withFailureHandler(function(err) {
+      alert('Error checking ID: ' + err.message); btn.prop('disabled', false).text('Continue'); hideLoader();
+    }).findUserByDiscordId(discordId);
+  });
+
+  // Bind row click using global dataTable exposed in JavaScript.html
+  $('#roster-table').on('click', 'tbody tr', function() {
+    if (!window.dataTable) return;
+    const data = window.dataTable.row(this).data();
+    if (!data) return; 
+    showLoader();
+    google.script.run.withSuccessHandler(function(result) {
+      hideLoader(); openEditModal(result, data['Discord ID']);
+    }).withFailureHandler(function(err){ hideLoader(); alert('Error: ' + err.message); }).findUserByDiscordId(data['Discord ID']);
+  });
+
+  document.getElementById('edit-user-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('btn-save-member').disabled = true;
+    document.getElementById('edit-status-message').className = 'alert alert-info mb-3';
+    document.getElementById('edit-status-message').textContent = 'Validating and Saving...';
+    document.getElementById('edit-status-message').classList.remove('d-none');
+    showLoader();
+
+    const womIds = [], accountNotes = [], rsns = [], clans = [], gameRanks = [];
+    document.querySelectorAll('.account-group').forEach(function(group) {
+      const wId = group.querySelector('.wom-id').value.trim().replace(/,/g, '');
+      const aNote = group.querySelector('.account-note').value.trim().replace(/,/g, '');
+      const rsn = group.querySelector('.rsn-input').value.trim().replace(/,/g, '');
+      const clan = group.querySelector('.account-clan').value.trim().replace(/,/g, '');
+      const rank = group.querySelector('.account-rank').value.trim().replace(/,/g, '');
+      if (wId || aNote || rsn) { womIds.push(wId); accountNotes.push(aNote); rsns.push(rsn); clans.push(clan || 'Pending Sync...'); gameRanks.push(rank || 'Pending Sync...'); }
+    });
+
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData.entries());
+    data['WOM IDs'] = womIds.join(', '); data['Account Notes'] = accountNotes.join(', '); data['RSNs'] = rsns.join(', ');
+    data['Account Clan'] = clans.join(', '); data['Game Ranks'] = gameRanks.join(', ');
+    data['Admin Flags'] = Array.from(document.getElementById('edit-admin-flags').options).map(opt => opt.value).join(', ');
+    
+    const newClanRank = (data['Clan Rank'] || '').trim();
+    if (newClanRank && newClanRank !== originalClanRank) {
+      const today = new Date().toISOString().split('T')[0];
+      data['Clan Rank Date'] = today;
+      data['Rank History'] = currentRankHistory ? `${currentRankHistory}, ${newClanRank}:${today}` : `${newClanRank}:${today}`;
+    }
+
+    pendingFormData = data; 
+    if (initialLoadedData) {
+      google.script.run.withSuccessHandler(function(latestResult) {
+        if (latestResult && hasConflict(initialLoadedData, latestResult.user)) $('#conflict-modal').modal('show');
+        else executeSave(pendingFormData);
+      }).findUserByDiscordId(data['Discord ID']);
+    } else { executeSave(pendingFormData); }
+  });
+
+  document.getElementById('btn-conflict-overwrite').addEventListener('click', function() { $('#conflict-modal').modal('hide'); executeSave(pendingFormData); });
+  document.getElementById('btn-conflict-reload').addEventListener('click', function() {
+    $('#conflict-modal').modal('hide'); showLoader();
+    google.script.run.withSuccessHandler(function(result) { hideLoader(); openEditModal(result, pendingFormData['Discord ID']); }).findUserByDiscordId(pendingFormData['Discord ID']);
+  });
+
+  function openEditModal(result, targetDiscordId) {
+    const statusMsg = document.getElementById('edit-status-message');
+    document.getElementById('accounts-container').innerHTML = ''; 
+    document.getElementById('btn-save-member').disabled = false;
+
+    if (!result) {
+      statusMsg.classList.remove('d-none'); statusMsg.textContent = 'New Discord ID identified. Fill out details to create entry.'; statusMsg.className = 'alert alert-success mb-3';
+      document.getElementById('edit-discord-id').value = targetDiscordId ? targetDiscordId.toString().replace(/^'/, '') : '';
+      document.getElementById('edit-discord-name').value = 'Pending Sync...'; document.getElementById('edit-discord-ranks').value = 'Pending Sync...';
+      document.getElementById('edit-join-date').value = 'Pending Sync...'; document.getElementById('edit-user-notes').value = '';
+      document.getElementById('edit-system-flags').value = 'Pending Sync...'; document.getElementById('edit-clan-rank-date').value = 'Pending Sync...';
+      document.getElementById('edit-rank-history').value = 'Pending Sync...';
+      document.getElementById('edit-clan-rank').value = ''; document.getElementById('edit-game-rank').value = 'Pending Sync...';
+      originalClanRank = ''; currentRankHistory = ''; initialLoadedData = null; 
+      populateAdminFlags([]);
+    } else {
+      const user = result.user;
+      initialLoadedData = user;
+      statusMsg.classList.add('d-none');
+      document.getElementById('edit-discord-id').value = user['Discord ID'] ? user['Discord ID'].toString().replace(/^'/, '') : '';
+      document.getElementById('edit-discord-name').value = user['Discord Name'] || '';
+      document.getElementById('edit-discord-ranks').value = window.translateRoleIds(user['Discord Ranks'] || '');
+      document.getElementById('edit-join-date').value = user['Join Date'] || '';
+      document.getElementById('edit-user-notes').value = user['User Notes'] || '';
+      document.getElementById('edit-system-flags').value = user['System Flags'] || 'OK';
+      document.getElementById('edit-clan-rank-date').value = user['Clan Rank Date'] || '';
+      document.getElementById('edit-rank-history').value = user['Rank History'] || '';
+      originalClanRank = (user['Clan Rank'] || '').trim(); document.getElementById('edit-clan-rank').value = originalClanRank;
+      const rawRanksData = user['Game Ranks'] !== undefined ? user['Game Ranks'] : (user['Game Rank'] || '');
+      document.getElementById('edit-game-rank').value = window.filterMainClanRanks(rawRanksData, user['Account Clan']);
+      
+      populateAdminFlags((user['Admin Flags'] || '').split(',').map(s => s.trim()).filter(s => s));
+      currentRankHistory = user['Rank History'] || '';
+
+      const womIds = (user['WOM IDs'] || '').toString().split(',').map(s => s.trim()); const notes = (user['Account Notes'] || '').toString().split(',').map(s => s.trim());
+      const rsns = (user['RSNs'] || '').toString().split(',').map(s => s.trim()); const clans = (user['Account Clan'] || '').toString().split(',').map(s => s.trim());
+      const ranks = rawRanksData.toString().split(',').map(s => s.trim());
+      
+      let nameHistory = {};
+      try { nameHistory = JSON.parse(user['Name History'] || '{}'); } catch(e) {}
+
+      const maxAccounts = Math.max(womIds.length, notes.length, rsns.length, clans.length, ranks.length);
+      for (let i = 0; i < maxAccounts; i++) {
+        if (womIds[i] || notes[i] || rsns[i] || clans[i] || ranks[i]) {
+          let hHtml = '';
+          const wid = womIds[i];
+          if (wid && nameHistory[wid] && nameHistory[wid].length > 0) {
+             hHtml = '<div class="row mt-2 pt-2 border-top border-light"><div class="col-12"><small class="text-muted"><strong>Previous Names:</strong><ul class="mb-0 pl-3">';
+             nameHistory[wid].forEach(ev => { hHtml += `<li>${ev.old} &rarr; ${ev.new} <em>(${ev.date})</em></li>`; });
+             hHtml += '</ul></small></div></div>';
+          }
+          addAccountField(womIds[i] || '', notes[i] || '', rsns[i] || '', clans[i] || '', ranks[i] || '', hHtml);
+        }
+      }
+    }
+    $('#edit-user-modal').modal('show');
+  }
+
+  // --- Multi-pane Admin Flags Logic ---
+  function populateAdminFlags(assignedFlags) {
+    const allAdminFlags = ["Banned", "On Leave", "Ignore Error: Rank Mismatch", "Ignore Error: Missing RSNs", "Ignore Error: Not in Discord", "Ignore Error: User Not Found", "Ignore Error: Clan Departure", "Ignore Error: Multiple Clans"];
+    const availSelect = document.getElementById('available-admin-flags');
+    const assignedSelect = document.getElementById('edit-admin-flags');
+    availSelect.innerHTML = ''; assignedSelect.innerHTML = '';
+
+    allAdminFlags.forEach(flag => {
+      const opt = document.createElement('option'); opt.value = flag; opt.textContent = flag;
+      if (assignedFlags.includes(flag)) assignedSelect.appendChild(opt); else availSelect.appendChild(opt);
+    });
+    assignedFlags.forEach(flag => { // Catch legacy flags
+      if (!allAdminFlags.includes(flag)) {
+        const opt = document.createElement('option'); opt.value = flag; opt.textContent = flag;
+        assignedSelect.appendChild(opt);
+      }
+    });
+  }
+
+  document.getElementById('btn-add-admin-flag').addEventListener('click', function() {
+    const availSelect = document.getElementById('available-admin-flags'); const assignedSelect = document.getElementById('edit-admin-flags');
+    Array.from(availSelect.selectedOptions).forEach(opt => assignedSelect.appendChild(opt));
+  });
+
+  document.getElementById('btn-rem-admin-flag').addEventListener('click', function() {
+    const availSelect = document.getElementById('available-admin-flags'); const assignedSelect = document.getElementById('edit-admin-flags');
+    Array.from(assignedSelect.selectedOptions).forEach(opt => availSelect.appendChild(opt));
+  });
+
+  // --- Auto-Resize Textarea Logic ---
+  document.addEventListener('input', function(e) {
+    if (e.target.classList.contains('auto-resize')) {
+      e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px';
+    }
+  });
+
+  $('#edit-user-modal').on('shown.bs.modal', function () {
+    document.querySelectorAll('.auto-resize').forEach(el => { el.style.height = 'auto'; el.style.height = (el.scrollHeight) + 'px'; });
+  });
+
+  function hasConflict(oldData, freshData) {
+    return oldData['Clan Rank'] !== freshData['Clan Rank'] || oldData['WOM IDs'] !== freshData['WOM IDs'] ||
+           oldData['Account Notes'] !== freshData['Account Notes'] || oldData['Admin Flags'] !== freshData['Admin Flags'] || oldData['User Notes'] !== freshData['User Notes'];
+  }
+
+  function executeSave(payload) {
+    google.script.run.withSuccessHandler(function(response) {
+      const statusMsg = document.getElementById('edit-status-message');
+      if (response.success) {
+        statusMsg.textContent = 'Saved Successfully!'; statusMsg.className = 'alert alert-success mb-3'; statusMsg.classList.remove('d-none');
+        hideLoader(); setTimeout(() => { $('#edit-user-modal').modal('hide'); }, 1000); if (window.loadRosterTable) window.loadRosterTable();
+      } else {
+        statusMsg.textContent = 'Error: ' + response.message; statusMsg.className = 'alert alert-danger mb-3'; statusMsg.classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
+      }
+    }).withFailureHandler(function(err) {
+      document.getElementById('edit-status-message').textContent = 'Network Error: ' + err.message; document.getElementById('edit-status-message').className = 'alert alert-danger mb-3'; document.getElementById('edit-status-message').classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
+    }).createOrUpdateUser(payload);
+  }
+});
+</script>

@@ -1,0 +1,262 @@
+<!-- Manage Ranks Modal -->
+<div class="modal fade" id="ranks-modal" tabindex="-1" data-backdrop="static">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Manage Clan Ranks (Reference Data)</h5>
+        <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <div class="modal-body bg-light" id="ranks-container" style="max-height: 75vh; overflow-y: auto;">
+        <!-- Rank Cards injected here -->
+      </div>
+      <div class="modal-body bg-white border-top">
+         <button type="button" class="btn btn-outline-primary" id="btn-add-rank">+ Add Rank</button>
+      </div>
+      <div class="modal-footer border-top">
+        <span id="ranks-status-message" class="mr-3 d-none"></span>
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="btn-save-ranks">Save Ranks</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+  function escapeHtml(unsafe) {
+    return (unsafe || '').toString()
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+  }
+
+  function generateRankCard(rank = {}) {
+    const clanRank = escapeHtml(rank['Clan Rank']);
+    const mainRank = escapeHtml(rank['Main In-Game Rank']);
+    const altRanks = escapeHtml(rank['Allowed Alt Ranks']);
+    const maxAccounts = escapeHtml(rank['Max Clan Accounts'] !== undefined ? rank['Max Clan Accounts'] : '1');
+    const maxInactive = escapeHtml(rank['Max Inactive Days'] !== undefined ? rank['Max Inactive Days'] : '');
+    const notes = escapeHtml(rank['Notes / Description']);
+
+    const reqIds = (rank['Required Discord Roles'] || '').toString().split(',').map(s => s.trim());
+    const allIds = (rank['Allowed Discord Roles'] || '').toString().split(',').map(s => s.trim());
+    const excIds = (rank['Excluded Discord Roles'] || '').toString().split(',').map(s => s.trim());
+
+    let availableHtml = '';
+    let reqHtml = '';
+    let allHtml = '';
+    let excHtml = '';
+
+    for (const [rId, rName] of Object.entries(discordRoleMap)) {
+      const option = `<option value="${rId}">${escapeHtml(rName)}</option>`;
+      if (reqIds.includes(rId)) {
+        reqHtml += option;
+      } else if (allIds.includes(rId)) {
+        allHtml += option;
+      } else if (excIds.includes(rId)) {
+        excHtml += option;
+      } else {
+        availableHtml += option;
+      }
+    }
+
+    return `
+      <div class="card mb-4 rank-card shadow-sm border-secondary">
+        <div class="card-header d-flex justify-content-between align-items-center bg-white py-2">
+          <h6 class="mb-0 rank-title-display text-primary"><strong>${clanRank || 'New Rank'}</strong></h6>
+          <div>
+            <button type="button" class="btn btn-sm btn-outline-secondary move-up-btn" title="Move Up">&#8593;</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary move-down-btn" title="Move Down">&#8595;</button>
+            <button type="button" class="btn btn-sm btn-danger remove-rank-btn ml-3" title="Remove">&times;</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row mb-2">
+            <div class="col-md-3 form-group mb-0">
+              <label class="font-weight-bold">Clan Rank</label>
+              <input type="text" class="form-control rank-name-input" value="${clanRank}" placeholder="e.g., Corporal">
+            </div>
+            <div class="col-md-3 form-group mb-0">
+              <label class="font-weight-bold">Main In-Game Rank</label>
+              <input type="text" class="form-control rank-main-input" value="${mainRank}" placeholder="e.g., Corporal">
+            </div>
+            <div class="col-md-3 form-group mb-0">
+              <label class="font-weight-bold">Allowed Alt Ranks</label>
+              <input type="text" class="form-control rank-alt-input" value="${altRanks}" placeholder="e.g., Smiley">
+            </div>
+            <div class="col-md-3 form-group mb-0">
+              <label class="font-weight-bold">Max Accounts</label>
+              <input type="number" class="form-control rank-max-accounts-input" value="${maxAccounts}" min="1" placeholder="1">
+            </div>
+          </div>
+          <div class="row border-bottom pb-3 mb-3">
+            <div class="col-md-3 form-group mb-0">
+              <label class="font-weight-bold">Max Inactive Days</label>
+              <input type="number" class="form-control rank-inactive-input" value="${maxInactive}" min="1" placeholder="e.g., 60">
+            </div>
+            <div class="col-md-9 form-group mb-0">
+              <label class="font-weight-bold">Notes</label>
+              <input type="text" class="form-control rank-notes-input" value="${notes}" placeholder="Description...">
+            </div>
+          </div>
+          
+          <label class="font-weight-bold">Discord Roles Bucket Matrix</label>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="bg-light p-2 border rounded h-100">
+                <label class="text-muted mb-1"><small>Available Roles</small></label>
+                <input type="text" class="form-control form-control-sm mb-2 role-search" placeholder="Search roles...">
+                <select multiple class="form-control available-roles" style="height: 220px;">
+                  ${availableHtml}
+                </select>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <div class="d-flex mb-2">
+                <div class="d-flex flex-column justify-content-center px-2">
+                  <button type="button" class="btn btn-sm btn-primary mb-1 btn-add-req" title="Add Required">&gt;&gt;</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary btn-rem-req" title="Remove Required">&lt;&lt;</button>
+                </div>
+                <div class="flex-grow-1">
+                  <label class="text-primary mb-0"><small>Required Roles (Must have ALL)</small></label>
+                  <select multiple class="form-control req-roles border-primary" style="height: 65px;">${reqHtml}</select>
+                </div>
+              </div>
+              <div class="d-flex mb-2">
+                <div class="d-flex flex-column justify-content-center px-2">
+                  <button type="button" class="btn btn-sm btn-success mb-1 btn-add-all" title="Add Allowed">&gt;&gt;</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary btn-rem-all" title="Remove Allowed">&lt;&lt;</button>
+                </div>
+                <div class="flex-grow-1">
+                  <label class="text-success mb-0"><small>Allowed Roles (Optional add-ons)</small></label>
+                  <select multiple class="form-control all-roles border-success" style="height: 65px;">${allHtml}</select>
+                </div>
+              </div>
+              <div class="d-flex">
+                <div class="d-flex flex-column justify-content-center px-2">
+                  <button type="button" class="btn btn-sm btn-danger mb-1 btn-add-exc" title="Add Excluded">&gt;&gt;</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary btn-rem-exc" title="Remove Excluded">&lt;&lt;</button>
+                </div>
+                <div class="flex-grow-1">
+                  <label class="text-danger mb-0"><small>Excluded Roles (Forbidden to have)</small></label>
+                  <select multiple class="form-control exc-roles border-danger" style="height: 65px;">${excHtml}</select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function updateRankCardButtons() {
+    const cards = document.querySelectorAll('.rank-card');
+    cards.forEach((card, index) => {
+      card.querySelector('.move-up-btn').disabled = (index === 0);
+      card.querySelector('.move-down-btn').disabled = (index === cards.length - 1);
+    });
+  }
+
+  function moveRoles(card, fromSelector, toSelector) {
+    const from = card.querySelector(fromSelector);
+    const to = card.querySelector(toSelector);
+    const term = (card.querySelector('.role-search').value || '').toLowerCase();
+
+    Array.from(from.selectedOptions).forEach(opt => {
+      if (toSelector === '.available-roles') {
+        opt.hidden = term ? !opt.textContent.toLowerCase().includes(term) : false;
+      } else {
+        opt.hidden = false;
+      }
+      to.appendChild(opt);
+    });
+  }
+
+  document.getElementById('btn-open-ranks-modal').addEventListener('click', function() {
+    showLoader();
+    google.script.run.withSuccessHandler(function(ranks) {
+      const container = document.getElementById('ranks-container');
+      container.innerHTML = '';
+      if (ranks && ranks.length > 0) {
+        ranks.forEach(rank => container.insertAdjacentHTML('beforeend', generateRankCard(rank)));
+      }
+      updateRankCardButtons();
+      hideLoader();
+      $('#ranks-modal').modal('show');
+    }).withFailureHandler(function(err) {
+      alert('Error fetching ranks: ' + err.message);
+      hideLoader();
+    }).getFullReferenceData();
+  });
+
+  document.getElementById('btn-add-rank').addEventListener('click', function() {
+    document.getElementById('ranks-container').insertAdjacentHTML('beforeend', generateRankCard());
+    updateRankCardButtons();
+  });
+
+  document.getElementById('ranks-container').addEventListener('input', function(e) {
+    if (e.target.classList.contains('rank-name-input')) {
+      e.target.closest('.rank-card').querySelector('.rank-title-display').innerHTML = `<strong>${escapeHtml(e.target.value) || 'New Rank'}</strong>`;
+    } else if (e.target.classList.contains('role-search')) {
+      const term = e.target.value.toLowerCase();
+      const availableSelect = e.target.closest('.col-md-4').querySelector('.available-roles');
+      Array.from(availableSelect.options).forEach(opt => {
+        opt.hidden = !opt.textContent.toLowerCase().includes(term);
+      });
+    }
+  });
+
+  document.getElementById('ranks-container').addEventListener('click', function(e) {
+    const card = e.target.closest('.rank-card');
+    if (!card) return;
+    
+    if (e.target.closest('.remove-rank-btn')) { card.remove(); updateRankCardButtons(); } 
+    else if (e.target.closest('.move-up-btn')) { if (card.previousElementSibling) { card.parentNode.insertBefore(card, card.previousElementSibling); updateRankCardButtons(); } } 
+    else if (e.target.closest('.move-down-btn')) { if (card.nextElementSibling) { card.parentNode.insertBefore(card.nextElementSibling, card); updateRankCardButtons(); } } 
+    else if (e.target.closest('.btn-add-req')) moveRoles(card, '.available-roles', '.req-roles');
+    else if (e.target.closest('.btn-rem-req')) moveRoles(card, '.req-roles', '.available-roles');
+    else if (e.target.closest('.btn-add-all')) moveRoles(card, '.available-roles', '.all-roles');
+    else if (e.target.closest('.btn-rem-all')) moveRoles(card, '.all-roles', '.available-roles');
+    else if (e.target.closest('.btn-add-exc')) moveRoles(card, '.available-roles', '.exc-roles');
+    else if (e.target.closest('.btn-rem-exc')) moveRoles(card, '.exc-roles', '.available-roles');
+  });
+
+  document.getElementById('btn-save-ranks').addEventListener('click', function() {
+    const btn = this;
+    const msg = document.getElementById('ranks-status-message');
+    btn.disabled = true;
+    msg.textContent = 'Saving...';
+    msg.className = 'mr-3 text-info font-weight-bold';
+    msg.classList.remove('d-none');
+
+    const ranksToSave = [];
+    document.querySelectorAll('.rank-card').forEach(card => {
+      const clanRank = card.querySelector('.rank-name-input').value.trim();
+      if (clanRank) {
+        ranksToSave.push({
+          'Clan Rank': clanRank,
+          'Required Discord Roles': Array.from(card.querySelector('.req-roles').options).map(o => o.value).join(', '),
+          'Allowed Discord Roles': Array.from(card.querySelector('.all-roles').options).map(o => o.value).join(', '),
+          'Excluded Discord Roles': Array.from(card.querySelector('.exc-roles').options).map(o => o.value).join(', '),
+          'Main In-Game Rank': card.querySelector('.rank-main-input').value.trim(),
+          'Allowed Alt Ranks': card.querySelector('.rank-alt-input').value.trim(),
+          'Max Clan Accounts': card.querySelector('.rank-max-accounts-input').value.trim() || '1',
+          'Max Inactive Days': card.querySelector('.rank-inactive-input').value.trim(),
+          'Notes / Description': card.querySelector('.rank-notes-input').value.trim()
+        });
+      }
+    });
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (res.success) {
+        msg.textContent = 'Saved successfully!'; msg.className = 'mr-3 text-success font-weight-bold';
+        setTimeout(() => { $('#ranks-modal').modal('hide'); btn.disabled = false; msg.classList.add('d-none'); if(window.loadClanRanks) window.loadClanRanks(); }, 1000);
+      } else { msg.textContent = 'Error: ' + res.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false; }
+    }).saveReferenceData(ranksToSave);
+  });
+
+});
+</script>

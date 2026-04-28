@@ -1,0 +1,12 @@
+[client]
+showErrorDetails = "none"
+toolbarMode = "viewer"
+
+[theme]
+# Theme F: OSRS Southern Cross
+# Darkened AU/NZ Flag Blue for the sidebar, rich OSRS interface gold for readable buttons, and Arial-style font.
+primaryColor="#C89100"
+backgroundColor="#050A10"
+secondaryBackgroundColor="#01153E"
+textColor="#FFFFFF"
+font="sans serif"

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Secrets (NEVER UPLOAD THESE)
+shared_secrets/*
+!shared_secrets/*.example
+!shared_secrets/*.example.toml
+!shared_secrets/.env.example
+
+# Shared Config (Track examples, ignore live configs and images)
+shared_config/*
+!shared_config/*.example.toml
+
+# Volatile Data (Keep folder structure, ignore contents)
+shared_data/backups/*
+shared_data/caches/*
+shared_data/databases/*
+shared_data/exports/*
+shared_data/logs/*
+shared_data/reports/*
+shared_data/states/*
+shared_data/*.lock
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+
+# local Dev files
+monorepo_transition_plan.md

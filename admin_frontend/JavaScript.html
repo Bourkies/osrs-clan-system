@@ -1,0 +1,268 @@
+<script>
+// Global State & Utils for cross-file access
+let discordRoleMap = {};
+let targetClanName = '';
+let managedRoleIds = new Set();
+window.dataTable = null;
+function showLoader() { document.getElementById('global-loader').classList.remove('d-none'); }
+function hideLoader() { document.getElementById('global-loader').classList.add('d-none'); }
+
+document.addEventListener('DOMContentLoaded', function() {
+
+  // --- Initialization ---
+  initializeApp();
+
+  function initializeApp() {
+    showLoader();
+    google.script.run.withSuccessHandler(function(payload) {
+      targetClanName = payload.targetClanName || 'Unknown Clan';
+      discordRoleMap = payload.roleMap || {};
+      buildManagedRoles(payload.referenceData || []);
+      renderClanRanks(payload.ranks || []);
+      loadRosterTable(payload.users || []);
+    }).withFailureHandler(function(err) {
+      alert('Failed to initialize app: ' + err.message);
+      hideLoader();
+    }).getInitialPayload();
+  }
+
+  function buildManagedRoles(refData) {
+    managedRoleIds.clear();
+    refData.forEach(rule => {
+      ['Required Discord Roles', 'Allowed Discord Roles', 'Excluded Discord Roles'].forEach(col => {
+        if (rule[col]) rule[col].toString().split(',').forEach(id => managedRoleIds.add(id.trim().replace(/^'/, '')));
+      });
+    });
+  }
+
+  function filterMainClanRanks(ranksStr, clansStr) {
+    // Fallback: If config is broken, just show raw ranks instead of hiding them
+    if (!targetClanName || targetClanName === 'Unknown Clan') return ranksStr || ''; 
+    if (!ranksStr || !clansStr) return '';
+    
+    const ranks = String(ranksStr).split(',').map(s => s.trim());
+    const clans = String(clansStr).split(',').map(s => s.trim());
+    const mainRanks = [];
+    
+    for (let i = 0; i < Math.max(clans.length, ranks.length); i++) {
+      const clan = clans[i] || '';
+      const rank = ranks[i] || 'Unknown';
+      if (clan.toLowerCase() === targetClanName.toLowerCase()) {
+        mainRanks.push(rank);
+      }
+    }
+    return mainRanks.join(', ') || 'None';
+  }
+
+  function translateRoleIds(idsString) {
+    if (!idsString) return '';
+    return idsString.toString().split(',').map(id => {
+      id = id.trim();
+      if (id.startsWith("'")) id = id.substring(1); // Catch lingering formatting
+      if (!managedRoleIds.has(id)) return null; // Filter out irrelevant roles
+      return discordRoleMap[id] || `Unknown (${id})`; 
+    }).filter(Boolean).join(', ') || 'None';
+  }
+
+  function populateFlagDropdown(api) {
+    const select = $('#flag-filter-select');
+    if (!select.length) return;
+    const currentVal = select.val();
+    select.empty().append('<option value="">-- Filter by Flag --</option>');
+    
+    const sysFlags = new Set(), adminFlags = new Set();
+    
+    api.rows().data().each(function(data) {
+      if (data['System Flags']) data['System Flags'].split(',').forEach(f => { if(f.trim() && f.trim() !== 'OK') sysFlags.add(f.trim()); });
+      if (data['Admin Flags']) data['Admin Flags'].split(',').forEach(f => { if(f.trim()) adminFlags.add(f.trim()); });
+    });
+    
+    if (sysFlags.size > 0) {
+      const optgroup = $('<optgroup label="System Flags"></optgroup>');
+      [...sysFlags].sort().forEach(f => optgroup.append(`<option value="System Flags|${f}">${f}</option>`));
+      select.append(optgroup);
+    }
+    if (adminFlags.size > 0) {
+      const optgroup = $('<optgroup label="Admin Flags"></optgroup>');
+      [...adminFlags].sort().forEach(f => optgroup.append(`<option value="Admin Flags|${f}">${f}</option>`));
+      select.append(optgroup);
+    }
+    if (currentVal) select.val(currentVal);
+  }
+
+  function loadRosterTable(preloadedData = null) {
+    showLoader();
+    $('#btn-refresh-data').prop('disabled', true).text('Refreshing...');
+    
+    if (preloadedData) {
+      renderTable(preloadedData);
+    } else {
+      google.script.run.withSuccessHandler(function(data) {
+        renderTable(data);
+      }).withFailureHandler(function(err) {
+        alert('Failed to load table: ' + err.message);
+        $('#btn-refresh-data').prop('disabled', false).text('Refresh Data');
+        hideLoader();
+      }).getAllUsers();
+    }
+  }
+
+  function renderTable(data) {
+      if (window.dataTable) {
+        window.dataTable.clear().rows.add(data).draw();
+        populateFlagDropdown(window.dataTable);
+      } else {
+        window.dataTable = $('#roster-table').DataTable({
+          data: data,
+          stateSave: true, // Remembers sorting, page, and hidden columns in browser cache!
+          scrollX: true,   // Enables native horizontal scrolling
+          dom: "<'row mb-2'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8 d-flex justify-content-end align-items-center'<'mr-3'<'#flag-filter-container'>><'mr-2'B>f>>" +
+               "<'row'<'col-sm-12'tr>>" +
+               "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+          buttons: [{ extend: 'colvis', text: 'Columns ▾', className: 'btn-sm btn-outline-secondary' }],
+          columns: [
+            { title: 'Discord Name', data: 'Discord Name', defaultContent: '' },
+            { 
+              title: 'Discord ID', data: 'Discord ID', visible: true,
+              render: function(data, type) { 
+                let id = data ? data.replace(/^'/, '') : ''; 
+                if (type === 'display' && id.length > 6) return `<span title="${id}">${id.substring(0, 5)}...${id.slice(-3)}</span>`;
+                return id;
+              }
+            },
+            { title: 'Clan Rank', data: 'Clan Rank', defaultContent: '' },
+            { 
+              title: 'Discord Ranks', data: 'Discord Ranks', defaultContent: '',
+              render: function(data, type) { return (type === 'display' || type === 'filter') ? translateRoleIds(data) : data; }
+            },
+            { 
+              title: 'Linked Accounts', data: 'RSNs', 
+              render: function(data, type, row) {
+                if (type === 'display') {
+                  const rsns = (row['RSNs'] || '').split(',').map(s => s.trim());
+                  const wids = (row['WOM IDs'] || '').split(',').map(s => s.trim());
+                  const ranks = (row['Game Ranks'] !== undefined ? row['Game Ranks'] : (row['Game Rank'] || '')).split(',').map(s => s.trim());
+                  const clans = (row['Account Clan'] || '').split(',').map(s => s.trim());
+                  const notes = (row['Account Notes'] || '').split(',').map(s => s.trim());
+                  
+                  let html = '';
+                  const count = Math.max(rsns.length, wids.length, ranks.length, clans.length, notes.length);
+                  for(let i=0; i<count; i++) {
+                    if(!rsns[i] && !wids[i]) continue;
+                    html += `<div class="account-block mb-1 pb-1 border-bottom border-light text-nowrap">
+                      <strong>${rsns[i] || 'Unknown'}</strong> <span class="text-muted">(${wids[i] || 'No WOM'})</span><br>
+                      <small class="text-muted">Clan: <strong class="${(clans[i]||'').toLowerCase() === targetClanName.toLowerCase() ? 'text-success' : ''}">${clans[i] || '-'}</strong> | Rank: <strong>${ranks[i] || '-'}</strong> | Note: <em>${notes[i] || '-'}</em></small>
+                    </div>`;
+                  }
+                  return html || 'None';
+                }
+                if (type === 'filter') {
+                  return (row['RSNs'] || '') + ' ' + (row['WOM IDs'] || '');
+                }
+                return data;
+              }
+            },
+            { 
+              title: 'Previous Names', data: 'Name History', defaultContent: '',
+              render: function(data, type, row) {
+                if (!data) return '';
+                try {
+                  const history = JSON.parse(data);
+                  const names = new Set();
+                  for (const wid in history) {
+                    history[wid].forEach(event => { names.add(event.old); names.add(event.new); });
+                  }
+                  if (names.size === 0) return '';
+                  
+                  const currentRsns = (row['RSNs'] || '').split(',').map(s => s.trim().toLowerCase());
+                  const previousNames = Array.from(names).filter(n => !currentRsns.includes(n.toLowerCase()));
+                  if (previousNames.length === 0) return '';
+                  
+                  const namesStr = previousNames.join(', ');
+                  if (type === 'display') return `<small class="text-muted" style="display: block; max-width: 180px; white-space: normal; line-height: 1.2;">${namesStr}</small>`;
+                  return namesStr;
+                } catch (e) { return ''; }
+              }
+            },
+            { title: 'User Notes', data: 'User Notes', defaultContent: '' },
+            { 
+              title: 'System Flags', name: 'System Flags', data: 'System Flags', defaultContent: '',
+              render: function(data, type) { 
+                if (type !== 'display' || !data) return data;
+                const flags = data.split(',').map(f => f.trim()).filter(f => f && f !== 'OK');
+                if (flags.length === 0) return '';
+                return `<div title="${data}" class="d-flex flex-column">` +
+                       flags.map(f => `<small class="text-danger mb-1" style="line-height: 1.1;"><strong>${f}</strong></small>`).join('') +
+                       `</div>`;
+              }
+            },
+            { 
+              title: 'Admin Flags', name: 'Admin Flags', data: 'Admin Flags', defaultContent: '', visible: true,
+              render: function(data, type) { 
+                if (type !== 'display' || !data) return data;
+                const flags = data.split(',').map(f => f.trim()).filter(f => f);
+                if (flags.length === 0) return '';
+                return `<div title="${data}" class="d-flex flex-column">` +
+                       flags.map(f => `<small class="text-primary mb-1" style="line-height: 1.1;"><strong>${f}</strong></small>`).join('') +
+                       `</div>`;
+              }
+            },
+            { title: 'Join Date', data: 'Join Date', defaultContent: '', visible: false },
+            { title: 'Clan Rank Date', data: 'Clan Rank Date', defaultContent: '', visible: false }
+          ],
+          order: [[0, 'asc']],
+          pageLength: 25,
+          createdRow: function(row, data, dataIndex) {
+            $(row).addClass('clickable-row');
+          },
+          initComplete: function() {
+            const api = this.api();
+            const select = $('<select id="flag-filter-select" class="form-control form-control-sm"><option value="">-- Filter by Flag --</option></select>');
+            
+            select.on('change', function() {
+              const val = $(this).val();
+              api.column('System Flags:name').search('');
+              api.column('Admin Flags:name').search('');
+              if (val) {
+                const parts = val.split('|');
+                const colName = parts[0], flag = parts[1];
+                // Regex exact match between string boundaries or commas
+                api.column(colName + ':name').search(`(?:^|,\\s*)${$.fn.dataTable.util.escapeRegex(flag)}(?:\\s*,|$)`, true, false).draw();
+              } else {
+                api.draw();
+              }
+            });
+            
+            $('#flag-filter-container').append(select);
+            populateFlagDropdown(api);
+          }
+        });
+      }
+      $('#btn-refresh-data').prop('disabled', false).text('Refresh Data');
+      hideLoader();
+  }
+
+  function renderClanRanks(ranks) {
+    const select = document.getElementById('edit-clan-rank');
+    select.innerHTML = '<option value="">-- No Rank Assigned --</option>'; // Clear existing options
+    ranks.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r; opt.textContent = r;
+      select.appendChild(opt);
+    });
+  }
+
+  function loadClanRanks() {
+    google.script.run.withSuccessHandler(renderClanRanks).getClanRanks();
+  }
+  window.loadClanRanks = loadClanRanks; // Expose for RanksManager
+  window.loadRosterTable = loadRosterTable;
+  window.filterMainClanRanks = filterMainClanRanks;
+  window.translateRoleIds = translateRoleIds;
+
+  // --- Event Listeners ---
+
+  // 1. Toolbar Actions
+  document.getElementById('btn-refresh-data').addEventListener('click', function() { loadRosterTable(); });
+});
+</script>
