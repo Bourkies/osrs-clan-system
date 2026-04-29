@@ -245,8 +245,6 @@ mode = "new"
 # --- Dashboard Settings ---
 # These settings control the data transformations for the dashboard.
 [dashboard_settings]
-week_start_day = "Monday"
-custom_lookback_days = 14
 top_drops_limit = 50
 
 

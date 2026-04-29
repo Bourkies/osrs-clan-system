@@ -142,12 +142,11 @@ def create_metadata_tables(engine, config, periods, run_warnings):
     clog_item_orders = {g.get('title'): g.get('items', []) for g in clog_hist_data.get('groups', [])}
 
     df_config = pd.DataFrame([
-        {'key': 'custom_lookback_days', 'value': str(config['dashboard_settings'].get('custom_lookback_days', 14))},
         {'key': 'top_drops_limit', 'value': str(config['dashboard_settings'].get('top_drops_limit', 50))},
-        {'key': 'label_prev_week', 'value': periods['Prev_Week']['label']},
-        {'key': 'label_prev_month', 'value': periods['Prev_Month']['label']},
-        {'key': 'label_ytd', 'value': periods['YTD']['label']},
-        {'key': 'label_custom_days', 'value': periods['Custom_Days']['label']},
+        {'key': 'label_today', 'value': periods['Today']['label']},
+        {'key': 'label_last_7_days', 'value': periods['Last_7_Days']['label']},
+        {'key': 'label_last_30_days', 'value': periods['Last_30_Days']['label']},
+        {'key': 'label_this_year', 'value': periods['This_Year']['label']},
         
         {'key': 'pb_other_group_name', 'value': pb_hist_data.get('other_group_name', 'Miscellaneous PBs')},
         {'key': 'pb_default_group_sort', 'value': pb_hist_data.get('default_group_sort', 'config')},

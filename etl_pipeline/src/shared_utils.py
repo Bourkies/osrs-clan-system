@@ -104,38 +104,18 @@ def get_time_periods(config, run_time=None):
     if run_time is None:
         run_time = datetime.now(timezone.utc)
         
-    settings = config.get('dashboard_settings', {})
-    
-    # Year-to-Date
+    start_of_today = run_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_7_days = (run_time - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_30_days = (run_time - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_year = run_time.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-    
-    # Previous Month
-    end_of_last_month = run_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    start_of_last_month = (end_of_last_month - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    
-    # Previous Week
-    week_start_day_name = settings.get('week_start_day', 'Monday')
-    weekday_map = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
-    week_start_day_num = weekday_map.get(week_start_day_name, 0)
-    
-    days_since_week_start = (run_time.weekday() - week_start_day_num + 7) % 7
-    start_of_current_week = (run_time - timedelta(days=days_since_week_start)).replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_previous_week = start_of_current_week
-    start_of_previous_week = end_of_previous_week - timedelta(days=7)
-
-    # Custom Lookback
-    custom_days = settings.get('custom_lookback_days', 14)
-    start_of_custom = (run_time - timedelta(days=custom_days)).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # All Time (no date filter)
     all_time_start = datetime.min.replace(tzinfo=timezone.utc)
 
     periods = {
-        "All_Time": {"start": all_time_start, "end": run_time, "label": "All-Time"},
-        "YTD": {"start": start_of_year, "end": run_time, "label": f"Year-to-Date ({run_time.year})"},
-        "Prev_Month": {"start": start_of_last_month, "end": end_of_last_month, "label": f"{start_of_last_month.strftime('%B %Y')}"},
-        "Prev_Week": {"start": start_of_previous_week, "end": end_of_previous_week, "label": f"Week {start_of_previous_week.isocalendar()[1]}"},
-        "Custom_Days": {"start": start_of_custom, "end": run_time, "label": f"Last {custom_days} Days"}
+        "All_Time": {"start": all_time_start, "end": run_time, "label": "All Time"},
+        "This_Year": {"start": start_of_year, "end": run_time, "label": f"This Year ({run_time.year})"},
+        "Last_30_Days": {"start": start_of_30_days, "end": run_time, "label": "Last 30 Days"},
+        "Last_7_Days": {"start": start_of_7_days, "end": run_time, "label": "Last 7 Days"},
+        "Today": {"start": start_of_today, "end": run_time, "label": "Today"}
     }
     return periods
 
