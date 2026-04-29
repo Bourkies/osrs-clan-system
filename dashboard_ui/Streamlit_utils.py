@@ -345,6 +345,16 @@ def display_leaderboard_podium(
     # Create a local copy of flat lists so we don't mutate the cached TOML data
     local_flat_messages = podium_messages.copy() if isinstance(podium_messages, list) else []
 
+    # Pre-calculate cross-rank references (e.g., {rank_1}) with appropriate colors
+    cross_rank_players = {}
+    for rank_idx in range(podium_size):
+        if rank_idx < len(podium_df):
+            p_safe = str(podium_df.iloc[rank_idx][player_col]).replace('<', '&lt;').replace('>', '&gt;')
+            p_color = PODIUM_RANKS.get(rank_idx, PODIUM_RANKS['default'])['border']
+            cross_rank_players[f"{{rank_{rank_idx+1}}}"] = f"<span style='color: {p_color}; font-weight: bold;'>{p_safe}</span>"
+        else:
+            cross_rank_players[f"{{rank_{rank_idx+1}}}"] = "<span style='color: #888888; font-style: italic;'>Nobody</span>"
+
     for i, row in podium_df.iterrows():
         player_safe = str(row[player_col]).replace('<', '&lt;').replace('>', '&gt;')
         count = row[count_col]
@@ -389,6 +399,11 @@ def display_leaderboard_podium(
                 message_text = clean_template.replace("{player}", f"<span style='color: {colors['border']}; font-weight: bold;'>{player_safe}</span>") \
                                              .replace("{value}", f"<span style='color: {colors['border']}; font-weight: bold;'>{count_str}</span>") \
                                              .replace("{count}", f"<span style='color: {colors['border']}; font-weight: bold;'>{secondary_str}</span>")
+                                         
+            # Apply cross-rank replacements
+            for rank_tag, rank_html in cross_rank_players.items():
+                message_text = message_text.replace(rank_tag, rank_html)
+                
                 message_text_html = f"""<hr style="border-top: 1px solid rgba(255,255,255,0.1); margin: 12px 0;">
                                         <div style="text-align: center; font-size: 0.95em; font-style: italic;">{message_text}</div>"""
 

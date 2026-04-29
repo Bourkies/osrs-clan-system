@@ -1,23 +1,53 @@
 # dashboard_texts.toml
 # Stores configuration for UI elements like custom messages and titles.
 
+# --- Available Variables for Text Replacement ---
+# General Leaderboards (Podiums):
+#   {player} : The name of the player for that specific rank (Colored to match their rank).
+#   {value}  : The primary score/value (e.g., GP earned, total kills).
+#   {count}  : The secondary score/count (e.g., number of drops, number of deaths).
+#   {rank_1}, {rank_2}, {rank_3} : Mentions the player sitting in that specific rank (Colored to match that rank).
+#
+# Achievements & Recent Events (Used on specific pages):
+#   {date}   : Date of the event.
+#   {skill}, {level} : Used for Level Ups / Maxing.
+#   {task}, {tier} : Used for Combat Tasks / Combat Achievements.
+#   {diary}, {pet_name}, {quest_name} : Self-explanatory.
+#   {lives}  : Remaining group lives for HCIM deaths.
+# ----------------------------------------------
+# Useful Emojis for Copy-Pasting:
+# Medals & Trophies: 🥇 🥈 🥉 🏆 👑 🏅
+# Money & Loot:      💰 🪙 🤑 💸 📈 📉 💎
+# Combat & Death:    💀 ⚔️ 🏹 🎯 🔥 🪦 💔 🩸 🛡️
+# Reactions & Chat:  🎉 🙌 🎊 🗣️ 🔊 📢 🔇 💬 💥
+# Skilling & Magic:  🔼 🚀 🆙 🧠 🧊 ⚡ ✨ 📚 🗺️ 📜
+# Pets & Animals:    🐾 🐀 🦝 🐭 🐑 🐸 🦆 🐄 🐍 🦇
+# Nature & Outdoors: 🌿 🌱 🌾 🌳 🌲 🌞 🏕️ 🪵 ⛰️ 🍄 🧑‍🌾 👨‍🌾 👩‍🌾
+# Misc/Memes:        👢 🚪 🥾 🧹 🔫 👮 🧀 🧻 🧂 🍺 🪃
+# ----------------------------------------------
+
 [valuable_drops]
 [valuable_drops.top_earner_messages]
 rank_1 = [
     "🥇 The undisputed loot king! **{player}** secured **{value}**.",
     "👑 **{player}** carried the clan bank this week with a whopping **{value}** haul.",
     "💰 Who needs a job when you're pulling in **{value}** like **{player}**?",
-    "🪙 **{player}** made more than Mod Ash’s salary — **{value}**, to be exact!"
+    "🪙 **{player}** made more than Mod Ash’s salary: **{value}**, to be exact!",
+    "🥇 **{player}** single-handedly caused inflation this week with a **{value}** haul."
 ]
 rank_2 = [
-    "🥈 Right on their heels, **{player}** pulled in a respectable **{value}**.",
+    "🥈 Right on **{rank_1}'s** heels, **{player}** pulled in a respectable **{value}**.",
     "🥈 Silver medal for **{player}**! **{value}** is nothing to sneeze at.",
-    "📈 Stonks only go up for **{player}**, with **{value}** earned!"
+    "📈 Stonks only go up for **{player}**, with **{value}** earned!",
+    "💰 If **{rank_1}** didn't exist, **{player}** would be on top with **{value}**.",
+    "🥈 Always the bridesmaid, never the bride. Still, **{value}** is a massive flex for **{player}**!"
 ]
 rank_3 = [
     "🥉 **{player}** rounds out the podium with **{value}**.",
     "🥉 Solid effort from **{player}**, taking home **{value}**.",
-    "🤑 IRS called, they want to audit **{player}** for making **{value}**."
+    "🤑 IRS called, they want to audit **{player}** for making **{value}**.",
+    "🥉 Unlike {rank_1}, **{player}** went outside and touched grass, which is why they only placed 3rd with **{value}**.",
+    "🥉 **{player}** sneaks onto the podium with **{value}**. The RNG was clearly on their side!"
 ]
 
 [pvp_leaderboard]
@@ -25,66 +55,94 @@ rank_3 = [
 rank_1 = [
     "🥇 **{player}** was the most feared pker, securing **{value}** in loot over **{count}** kills!",
     "👑 Crown that pker! **{player}** took home **{value}** across **{count}** kills.",
-    "💀 The wild trembled before **{player}**, who looted **{value}** in **{count}** PKs."
+    "💀 The wild trembled before **{player}**, who looted **{value}** in **{count}** PKs.",
+    "💀 Big PKs, deathmatching, or transferring a mega rare from their iron? Doesn't matter, **{player}** is on top with **{value}** from **{count}** PKs.",
+    "🥇 The Wilderness belongs to **{player}**, who made off with **{value}** across **{count}** victims."
 ]
 rank_2 = [
     "🥈 **{player}** turned the wilderness into a wallet farm, earning **{value}** in **{count}** kills.",
     "🥈 With **{count}** kills, **{player}** brought home a massive **{value}** in PKs.",
-    "⚔️ **{player}** farmed skulls like a champ—**{count}** kills and **{value}** looted."
+    "⚔️ **{player}** farmed skulls like a champ, **{count}** kills and **{value}** looted.",
+    "🥈 **{player}** is a walking tax collector in the Wildy, taxing players for **{value}** over **{count}** kills.",
+    "🥈 Sit! **{player}** sent **{count}** players back to Lumbridge, claiming **{value}** in the process."
 ]
 rank_3 = [
     "🥉 🎯 Killed for sport? Maybe. But **{player}** earned **{value}** doing it **{count}** times.",
     "🥉 🔥 **{player}** burned through the competition, pulling in **{value}** over **{count}** kills.",
-    "🥉 🏹 Wilderness MVP: **{player}** made **{value}** worth of chaos in **{count}** kills."
+    "🥉 🏹 Wilderness MVP: **{player}** made **{value}** worth of chaos in **{count}** kills.",
+    "🥉 Spades and glory. **{player}** took down **{count}** targets for a cool **{value}**.",
+    "🥉 Someone issue a bounty on **{player}**! They PKed **{value}** across **{count}** kills."
 ]
 
 [pvp_leaderboard.most_valuable_donor_messages]
 rank_1 = [
     "🥇 💸 **{player}** was the most generous donor, losing a total of **{value}** over **{count}** deaths.",
     "🥇 🪦 **{player}** funded half the clan’s loot with **{value}** in **{count}** deaths.",
-    "🥇 🧼 Cleaning supplies: **{player}**'s entire bank, now wiped for **{value}** over **{count}** deaths."
+    "🥇 🧼 Cleaning supplies: **{player}**'s entire bank, now wiped for **{value}** over **{count}** deaths.",
+    "🥇 📉 **{player}** single-handedly funded the PKer economy, losing **{value}** in **{count}** deaths.",
+    "🥇 🪦 Please press 'F' to pay respects to **{player}**'s bank value. Down **{value}** from **{count}** deaths."
 ]
 rank_2 = [
     "🥈 💸 Hope it wasn't a hardcore! **{player}** lost **{value}** across **{count}** deaths.",
     "🥈 💔 RIP to **{player}**'s gear tab — **{value}** donated via **{count}** deaths.",
     "📉 Investment tip: Don't be **{player}**. They lost **{value}** in **{count}** deaths.",
+    "🥈 🩸 Ouch! **{player}** got sat **{count}** times, parting ways with **{value}**.",
+    "🥈 💸 **{player}** is everyone's favorite loot piñata, dropping **{value}** over **{count}** deaths."
 ]
 rank_3 = [
     "😵 **{player}** took 'high risk, high loss' to heart with **{value}** lost across **{count}** deaths.",
     "🧾 **{player}** wrote off **{value}** in death-related expenses this week (**{count}** deaths).",
-    "🎭 Donator by choice or by misclick? Either way, **{player}** lost **{value}** in **{count}** trips."
+    "🎭 Donator by choice or by misclick? Either way, **{player}** lost **{value}** in **{count}** trips.",
+    "🥉 🩹 **{player}** needs some Saradomin brews and financial advice after losing **{value}** in **{count}** deaths.",
+    "🥉 🪃 They keep going back for more! **{player}** fed **{value}** to the wild over **{count}** trips to Death's Office."
 ]
 
 
 [kicks]
 [kicks.top_kicked_messages]
 rank_1 = [
-    "🥇 👢 The clan's favourite bootie is **{player}**, kicked **{count}** times.",
-    "🥇 🚪 Don't let the door hit you, **{player}** — kicked **{count}** times!"
+    "🥇 👢 Boot rank for **{player}**? Kicked **{count}** times.",
+    "🥇 🧑‍🌾 Cya Hick! Don't let the door hit you, **{player}** was kicked **{count}** times!",
+    "🥇 🥟 Abby Queen made sure **{player}** knows what a dimsim is on their **{count}** kicks.",
+    "🥇 🐉 **{player}** knows the level of a blue dragon after their **{count}** boots.",
+    "🥇 😲 Surprising **{player}** is still in the clan after **{count}** kicks."
 ]
 rank_2 = [
-    "🥈 🥾 **{player}** must have parking issues with all these boots: **{count}** kicks.",
-    "🥈 🔁 Respawned at Lumbridge? Nah — just another kick for **{player}**."
+    "🥈  Is **{player}** winning a kick war with **{rank_1}** or just have a bootable face? Gone **{count}** times.",
+    "🥈 🐢 Slow learner or likes the alone time? **{player}** kicked by power-abusing admins **{count}** times.",
+    "🥈 👢 **{player}** was forcefully ejected **{count}** times. Maybe read the bylaws?",
+    "🥈 🧀 **{player}** must like the view from the outside, getting booted **{count}** times.",
+    "🥈 🚀 Ground control to **{player}**, you've been launched from the chat **{count}** times."
 ]
 rank_3 = [
     "🥉 ⚖️ Justice served. **{player}** got the boot **{count}** times.",
     "🥉 🧹 Clean-up crew special: **{player}**, removed **{count}** times.",
-    "🥉 🎟️ Frequent flyer of the Kick Express: **{player}** with **{count}** stamps."
+    "🥉 🎟️ Frequent flyer of the Kick Express: **{player}** with **{count}** stamps.",
+    "🥉 💨 Poof! And just like that, **{player}** was kicked **{count}** times.",
+    "🥉 🤠 Does **{player}** have the most kickable face? Not this hick, with only **{count}** kicks."
 ]
 
 [kicks.fastest_finger_messages]
 rank_1 = [
     "🥇 🔫 The admin with the happiest trigger finger is **{player}**, kicking **{count}** people.",
-    "🥇 🔫 **{player}** is laying down the law, with **{count}** kicks delivered."
+    "🥇 � **{player}** is laying down the law, with **{count}** kicks delivered. Pure power abuse!",
+    "🥇 � The clan bouncer goes to **{player}**, clearing the room with **{count}** kicks.",
+    "🥇 ⚡ Lightning fast with the right-click! **{player}** issued **{count}** swift boots.",
+    "🥇 🔨 **{player}** ranked up just to power abuse them outa here! Cya hicks, **{count}** times."
 ]
 rank_2 = [
     "🥈 👮 **{player}** is judge, jury, and bouncer — **{count}** kicks handed out.",
-    "🥈 🚨 **{player}** was on a kicking spree! **{count}** boots deployed."
+    "🥈 🚨 **{player}** was on a kicking spree! **{count}** boots deployed.",
+    "🥈 🎯 **{player}** is on a power-abusing rampage, tallying up **{count}** ejections.",
+    "🥈 🥾 Step out of line and **{player}** will deliver one of their **{count}** trademark boots.",
+    "🥈 🧹 Keeping the clan clean of hicks! **{player}** swept away **{count}** people."
 ]
 rank_3 = [
     "🥉 🧯 Kick firestarter of the week: **{player}** with **{count}**.",
-    "🥉 🏆 Fastest finger in the west — **{player}** boots **{count}**.",
-    "🥉 🎮 Clan admin mode: activated. **{player}** booted **{count}** folks this round."
+    "🥉 🏆 Fastest finger in the west — **{player}** booted **{count}** hicks.",
+    "🥉 🎮 Clan admin mode: activated. **{player}** abused their power **{count}** times this round.",
+    "🥉 🚪 **{player}** loves showing people the door, with **{count}** kicks to their name.",
+    "🥉 🦵 **{player}** isn't afraid to use their rank, throwing out **{count}** boots."
 ]
 
 [stolen_whips]
@@ -92,48 +150,72 @@ whip_queen = "Abby Queen"
 
 [stolen_whips.top_thief_messages]
 rank_1 = [
-    "🥇 🐀 The biggest rat of them all! **{player}** stole **{count}** whips from the Queen.",
-    "🥇 🚔 Lock them up! **{player}** is public enemy number one with **{count}** stolen whips.",
-    "🥇 😤 The Queen's arch-nemesis! **{player}** snatched **{count}** whips."
+    "🥇 🐀 The biggest rat of them all! **{player}** stole **{count}** whips from Abby Queen.",
+    "🥇 🚔 Lock them up! **{player}** is public enemy number one with **{count}** of Abby Queen's whips.",
+    "🥇 😤 Abby Queen's arch-nemesis! **{player}** snatched **{count}** whips. Cya hick!",
+    "🥇 🐍 A slippery snake! **{player}** slithered away with **{count}** whips. Better hide the dimsims.",
+    "🥇 🥷 Master thief **{player}** pulled off the heist of the century, scoring **{count}** whips from the Queen."
 ]
 rank_2 = [
-    "🥈 🦝 **{player}** snuck away with **{count}** whips. The Queen is not amused.",
-    "🥈 🛑 Right behind the top thief is **{player}**, stealing **{count}** whips.",
-    "🥈 📉 The whip economy suffers because **{player}** stole **{count}** of them."
+    "🥈 🦝 **{player}** snuck away with **{count}** whips. Abby Queen is not amused.",
+    "🥈 🛑 Right behind the top thief is **{player}**, stealing **{count}** whips. Pure power abuse.",
+    "🥈 📉 The whip economy suffers because **{player}** stole **{count}** of them.",
+    "🥈 🐈‍⬛ Like a cat burglar in the night, **{player}** swiped **{count}** whips.",
+    "🥈 🏃‍♂️ Catch them if you can! **{player}** sprinted off with **{count}** whips before Abby Queen noticed."
 ]
 rank_3 = [
-    "🥉 🐭 **{player}** managed to snatch **{count}** whips before getting caught.",
-    "🥉 🧀 **{player}** took the cheese and **{count}** whips. Shame!",
-    "🥉 🕵️‍♀️ The investigation caught **{player}** red-handed with **{count}** whips."
+    "🥉 🐭 **{player}** managed to snatch **{count}** whips before getting caught by Abby Queen.",
+    "🥉 🧀 **{player}** took the dimsims and **{count}** whips. Shame!",
+    "🥉 🕵️‍♀️ The investigation caught **{player}** red-handed with **{count}** whips.",
+    "🥉 🦅 **{player}** swooped in and stole **{count}** whips right from under Abby Queen's nose.",
+    "🥉 😈 Devious behavior from **{player}**, pocketing **{count}** whips."
 ]
 
 [yappers]
 [yappers.top_yapper_messages]
 rank_1 = [
-    "🥇 🗣️ The clan's biggest menace is **{player}**, spamming '111' **{count}** times.",
-    "🥇 🔊 **{player}** broke the chatbox — **{count}** 111s in one session!"
+    "🥇 🐉 **{player}** keeps reminding everyone the level of a blue dragon by spamming '111' **{count}** times.",
+    "🥇 🔊 **{player}** broke the chatbox — **{count}** 111s in one session!",
+    "🥇 💬 Does **{player}** ever breathe? A staggering **{count}** yaps recorded.",
+    "🥇 🦜 **{player}** loves the chaos, helping kick **{count}** hicks outa here.",
+    "🥇 ⌨️ When will **{player}**'s '1' key fail? Spamming it **{count}** times."
 ]
 rank_2 = [
-    "🥈 🗣️ Is there an echo in here? Oh, it's just **{player}** saying '111' **{count}** times.",
-    "🥈 📢 **{player}** has the loudest mic and the least chill: **{count}** yaps."
+    "🥈 🗣️ Is there an echo in here? Oh, it's just **{player}** supporting **{count}** 111s.",
+    "🥈 📢 **{player}** has no chill, voting **{count}** times to kick a hick.",
+    "🥈 🗣️ **{player}** will support any vote with **{count}** 111s, maybe it's time to boot them?",
+    "🥈 📢 **{player}** is basically a human megaphone, contributing to **{count}** 111s.",
+    "🥈 📝 A whole essay of 111s! **{player}** hit us with **{count}** yaps."
 ]
 rank_3 = [
     "🥉 🗣️ 111 spam? Classic **{player}**, with **{count}** contributions.",
-    "🥉 🔇 Someone get the mute button — **{player}** is at **{count}** yaps!"
+    "🥉 🔇 Someone get the mute button — **{player}** is at **{count}** yaps!",
+    "🥉 � **{player}** couldn't resist chiming in **{count}** times. What a hick.",
+    "🥉 ️ Professional yapper **{player}** clocked in **{count}** times.",
+    "🥉 🐦 '111 111 111' — **{player}**, accurately summarized by their **{count}** messages."
 ]
 
 [yappers.top_gzer_messages]
 rank_1 = [
     "🥇 🎉 The most supportive member is **{player}**, with **{count}** GZs.",
-    "🥇 🙌 **{player}** handing out GZs like Oprah — **{count}** so far!"
+    "🥇 🙌 **{player}** handing out GZs like Oprah — **{count}** so far!",
+    "🥇 🎊 Is there a macro for this? **{player}** threw out **{count}** congratulations.",
+    "🥇 👑 The king of hype! **{player}** celebrated clanmates with **{count}** GZs.",
+    "🥇 ✨ **{player}** spreads nothing but good vibes, delivering **{count}** GZs."
 ]
 rank_2 = [
     "🥈 🎉 Leading the cheer squad is **{player}** with a massive **{count}** grats!",
-    "🥈 🎊 GZ-machine online: **{player}** with **{count}** delivered."
+    "🥈 🎊 GZ-machine online: **{player}** with **{count}** delivered.",
+    "🥈 🙌 Always there to cheer you on, **{player}** gave out **{count}** grats.",
+    "🥈 🎉 Good guy **{player}** supported the squad with **{count}** GZs.",
+    "🥈 🥳 The party doesn't start until **{player}** drops one of their **{count}** GZs."
 ]
 rank_3 = [
     "🥉 🗨️ **{player}** be like 'gz gz gz' — **{count}** times this period.",
-    "🥉 📈 GZs per minute? High. Thanks to **{player}**."
+    "🥉 📈 GZs per minute? High. Thanks to **{player}**.",
+    "🥉 🤝 A true team player! **{player}** congratulated the clan **{count}** times.",
+    "🥉 🎇 **{player}** is always watching the drop logs, reacting with **{count}** GZs.",
+    "🥉 🎈 Positive reinforcement provided by **{player}**, totaling **{count}** GZs."
 ]
 
 [personal_bests]
@@ -141,17 +223,23 @@ rank_3 = [
 rank_1 = [
     "🥇 **{player}** has **{count}** records—someone hose them down, they're sweating through the leaderboard!",
     "🥇 **{player}** spent more time Ruby Bolt resetting than sleeping. **{count}** records say it paid off… kinda.",
-    "🥇 🔥 **{player}** isn't just sweaty — they're evaporating. **{count}** records and counting!"
+    "🥇 🔥 **{player}** isn't just sweaty — they're evaporating. **{count}** records and counting!",
+    "🥇 💦 **{player}**’s gaming chair needs to be legally condemned. **{count}** records held!",
+    "🥇 🎮 The absolute peak of PvM sweat. **{player}** dominates the board with **{count}** PBs."
 ]
 rank_2 = [
     "🥈 💪 **{player}** is grinding so hard they left grooves in the keyboard. **{count}** records earned.",
     "🥈 📈 Efficiency experts agree: **{player}** has min-maxed their way to **{count}** records.",
-    "🥈 🧠 **{player}** uploaded their consciousness to Runelite for **{count}** records."
+    "🥈 🧠 **{player}** uploaded their consciousness to Runelite for **{count}** records.",
+    "🥈 ⏱️ **{player}** clicks faster than their shadow. A solid **{count}** records to their name.",
+    "🥈 ⚔️ Tick manipulation is a lifestyle for **{player}**, earning them **{count}** records."
 ]
 rank_3 = [
     "🥉 🏆 Tryhard alert! **{player}** racked up **{count}** records and still asked how to optimize more.",
     "🥉 🧊 Cool down! **{player}** is melting through metas with **{count}** records.",
-    "🥉 🤖 Rumor has it **{player}** is a raid bot in disguise with **{count}** records."
+    "🥉 🤖 Rumor has it **{player}** is a raid bot in disguise with **{count}** records.",
+    "🥉 🖱️ **{player}**’s mouse is begging for mercy after securing **{count}** records.",
+    "🥉 🥵 You can practically smell the sweat from here. **{player}** holds **{count}** records."
 ]
 
 [recent_achievements]
