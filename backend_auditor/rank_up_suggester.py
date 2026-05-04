@@ -125,16 +125,16 @@ def generate_suggestions():
     user_data = defaultdict(list)
     all_months = set()
     
-    valid_discord_ids = None
+    user_status_map = {}
     if roster_json.exists():
-        valid_discord_ids = set()
         try:
             with open(roster_json, 'r', encoding='utf-8') as f:
                 roster_data = json.load(f)
                 for user in roster_data.get('members', []):
-                    flags = user.get('system_flags', [])
-                    if 'Archived' not in flags:
-                        valid_discord_ids.add(str(user.get('discord_id')))
+                    user_status_map[str(user.get('discord_id'))] = {
+                        'system_flags': user.get('system_flags', []),
+                        'admin_flags': user.get('admin_flags', [])
+                    }
         except Exception as e:
             logger.warning(f"Could not read roster_export.json: {e}")
 
@@ -157,9 +157,14 @@ def generate_suggestions():
         for row in cursor.fetchall():
             discord_id = str(row['Discord_ID'])
             
-            # Filter out archived users using the fallback JSON roster
-            if valid_discord_ids is not None and discord_id not in valid_discord_ids:
-                continue
+            # Filter out explicitly excluded users using the JSON roster
+            if user_status_map:
+                status = user_status_map.get(discord_id)
+                if not status:
+                    continue  # User not in the roster export at all
+                
+                if any(f in status['system_flags'] for f in ['Archived', 'Not in Discord', 'Banned in Clan']) or 'Banned' in status['admin_flags']:
+                    continue
                 
             all_months.add(row['Month'])
             
@@ -217,6 +222,19 @@ def generate_suggestions():
         chat_tiers = thresholds.get("chat_tiers", DEFAULT_CHAT_TIERS)
         broadcast_tiers = thresholds.get("broadcast_tiers", DEFAULT_BROADCAST_TIERS)
         
+        # Collect warnings for members who qualify but have outstanding issues
+        warnings = []
+        if user_status_map and user_id in user_status_map:
+            status = user_status_map[user_id]
+            for sf in status['system_flags']:
+                if sf not in ['OK', 'Archived', 'Not in Discord', 'Banned in Clan']:
+                    warnings.append(sf)
+            for af in status['admin_flags']:
+                if af not in ['Banned', 'OK']:
+                    warnings.append(af)
+                    
+        warning_str = f" ⚠️ *[Flags: {', '.join(warnings)}]*" if warnings else ""
+        
         for _ in range(total_calendar_months):
             m_str = f"{curr_y:04d}-{curr_m:02d}"
             if m_str in record_dict:
@@ -231,7 +249,8 @@ def generate_suggestions():
         suggestion_record = {
             'name': records[-1]['name'], 'current_rank': true_rank, 'target_rank': target_rank,
             'points': total_points, 'required_points': thresholds['points'],
-            'months_in_rank': total_calendar_months, 'min_months': thresholds['min_months']
+            'months_in_rank': total_calendar_months, 'min_months': thresholds['min_months'],
+            'warning_str': warning_str
         }
         
         meets_full = (total_points >= thresholds['points'] and total_calendar_months >= thresholds['min_months'])
@@ -260,7 +279,7 @@ def generate_suggestions():
         suggestions.sort(key=lambda x: (PROGRESSION_RANKS.index(x['target_rank']), x['points']), reverse=True)
         lines.append("## 🎯 Ready for Promotion\n")
         for s in suggestions:
-            lines.append(f"* **{s['name']}**")
+            lines.append(f"* **{s['name']}**{s['warning_str']}")
             lines.append(f"  * Rank: {s['current_rank']} ➡️ **{s['target_rank']}**")
             lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months\n")
             
@@ -269,7 +288,7 @@ def generate_suggestions():
         lines.append("## ⏳ Close to Promotion (Early Consideration)")
         lines.append("> *Members who have reached at least 80% of the required points and are within 1 month of the time requirement.*\n")
         for s in early_suggestions:
-            lines.append(f"* **{s['name']}**")
+            lines.append(f"* **{s['name']}**{s['warning_str']}")
             lines.append(f"  * Rank: {s['current_rank']} ➡️ **{s['target_rank']}**")
             lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months\n")
             
