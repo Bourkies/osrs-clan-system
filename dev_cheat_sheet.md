@@ -21,7 +21,18 @@ This document contains quick copy-paste commands for managing the Docker contain
 
 ---
 
-## 🕵️ Backend Auditor Commands
+## 🚀 Deployment & Updates
+*Run these commands on your live server to pull the latest code and seamlessly restart the ecosystem with zero data loss.*
+
+**Pull the latest code from the repository:**
+`git pull`
+
+**Rebuild and restart the containers in the background:**
+`docker compose up -d --build`
+
+---
+
+## �️ Backend Auditor Commands
 *The Auditor runs autonomously on a cron schedule, but you can safely trigger it manually via Docker.*
 
 **Standard Run:**
