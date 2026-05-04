@@ -7,6 +7,7 @@ import time
 import json
 import re
 import os
+import signal
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -270,7 +271,15 @@ def run_pipeline():
     post_to_discord_webhook(webhook_url, summary_message, color=run_color)
     logger.info(f"{' Finished Full ETL Pipeline ':=^80}")
 
+def handle_shutdown_signal(signum, frame):
+    logger.warning(f"Received shutdown signal ({signum}). Gracefully releasing locks and exiting...")
+    sys.exit(0)
+
 def main():
+    # Register signal handlers for graceful shutdown (e.g., Docker stop/restart)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+
     try:
         acquire_lock()
         run_pipeline()

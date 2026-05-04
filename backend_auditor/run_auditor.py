@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import signal
 import argparse
 from dotenv import load_dotenv
 from loguru import logger
@@ -142,7 +143,15 @@ def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
     db.trim_audit_logs(keep_last=AUDIT_LOG_RETENTION_COUNT)
     db.append_audit_logs(["System Action - System (N/A): Auditor run finished."])
 
+def handle_shutdown_signal(signum, frame):
+    logger.warning(f"Received shutdown signal ({signum}). Gracefully releasing locks and exiting...")
+    sys.exit(0)
+
 def main():
+    # Register signal handlers for graceful shutdown (e.g., Docker stop/restart)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+
     parser = argparse.ArgumentParser(description="OSRS Clan Auditor")
     parser.add_argument('--force-wom', action='store_true', help='Force clear and refresh the entire WOM cache.')
     parser.add_argument('--no-webhook', action='store_true', help='Run full sync and audit, but skip sending the Discord webhook.')
