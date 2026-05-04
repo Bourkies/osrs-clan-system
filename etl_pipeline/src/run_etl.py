@@ -34,6 +34,15 @@ def acquire_lock(timeout=600, check_interval=10):
             logger.info("ETL Lock acquired successfully.")
             return True
         except FileExistsError:
+            # Check for stale lock file (e.g., from a previous hard crash)
+            try:
+                if time.time() - LOCK_FILE.stat().st_mtime > 3600:  # 1 hour threshold
+                    logger.warning(f"Stale ETL lock file detected (older than 1 hour). Removing: {LOCK_FILE}")
+                    LOCK_FILE.unlink(missing_ok=True)
+                    continue  # Loop back and try acquiring the lock again
+            except OSError:
+                pass  # File might have just been deleted by another process
+                    
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 logger.error(f"Timeout ({timeout}s) waiting for ETL lock file to be released: {LOCK_FILE}")
@@ -43,8 +52,12 @@ def acquire_lock(timeout=600, check_interval=10):
 
 def release_lock():
     try:
-        LOCK_FILE.unlink(missing_ok=True)
-        logger.info("ETL Lock released.")
+        if LOCK_FILE.exists():
+            with open(LOCK_FILE, 'r') as f:
+                pid = f.read().strip()
+            if pid == str(os.getpid()):
+                LOCK_FILE.unlink(missing_ok=True)
+                logger.info("ETL Lock released.")
     except Exception as e:
         logger.error(f"Error releasing lock: {e}")
 
@@ -258,8 +271,8 @@ def run_pipeline():
     logger.info(f"{' Finished Full ETL Pipeline ':=^80}")
 
 def main():
-    acquire_lock()
     try:
+        acquire_lock()
         run_pipeline()
     finally:
         release_lock()

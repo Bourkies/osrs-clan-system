@@ -43,6 +43,15 @@ def acquire_lock(timeout=600, check_interval=10):
             logger.info("Lock acquired successfully.")
             return True
         except FileExistsError:
+            # Check for stale lock file (e.g., from a previous hard crash)
+            try:
+                if time.time() - os.path.getmtime(LOCK_FILE) > 3600:  # 1 hour threshold
+                    logger.warning(f"Stale lock file detected (older than 1 hour). Removing: {LOCK_FILE}")
+                    os.remove(LOCK_FILE)
+                    continue  # Loop back and try acquiring the lock again
+            except OSError:
+                pass  # File might have just been deleted by another process
+                
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 logger.error(f"Timeout ({timeout}s) waiting for lock file to be released: {LOCK_FILE}")
@@ -52,10 +61,16 @@ def acquire_lock(timeout=600, check_interval=10):
 
 def release_lock():
     try:
-        os.remove(LOCK_FILE)
-        logger.info("Lock released.")
+        # Only remove the lock if it belongs to the current process
+        with open(LOCK_FILE, 'r') as f:
+            pid = f.read().strip()
+        if pid == str(os.getpid()):
+            os.remove(LOCK_FILE)
+            logger.info("Lock released.")
     except FileNotFoundError:
         pass
+    except Exception as e:
+        logger.error(f"Error releasing lock: {e}")
 
 def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
     logger.info("Initializing Orchestrator...")
@@ -134,8 +149,8 @@ def main():
     parser.add_argument('--sync-only', action='store_true', help='Sync APIs to database, but skip audits and webhook.')
     args = parser.parse_args()
 
-    acquire_lock()
     try:
+        acquire_lock()
         run_orchestrator(force_wom=args.force_wom, skip_webhook=args.no_webhook, sync_only=args.sync_only)
     finally:
         release_lock()
