@@ -85,7 +85,12 @@ def calculate_points(chats, broadcasts, chat_tiers, broadcast_tiers):
     return points
 
 def get_highest_rank(ranks_str):
-    ranks = [r.strip() for r in ranks_str.split(",")]
+    if not ranks_str or ranks_str.lower() == 'none':
+        return None
+        
+    ranks = [r.strip() for r in ranks_str.split(",") if r.strip()]
+    if not ranks:
+        return None
     
     # 1. Staff/Special bypasses automated progression
     for r in ranks:
@@ -110,7 +115,8 @@ def get_highest_rank(ranks_str):
         if r in SPECIAL_RANKS:
             return "Special"
             
-    return None
+    # 4. Wildcard / Event Rank check (If they had ranks but none matched above)
+    return "Wildcard"
 
 def generate_suggestions(roster_data=None, rank_rules=None):
     logger.info("Starting Clan Rank-Up Suggester...")
@@ -156,14 +162,33 @@ def generate_suggestions(roster_data=None, rank_rules=None):
         return -1
         
     discord_role_to_level = {}
+    ig_rank_to_level = {}
+    sheet_rank_to_base = {}
+    
     if rank_rules:
         for rule in rank_rules:
             r_name = str(rule.get('Clan Rank', '')).strip()
-            lvl = get_rank_level(r_name)
+            main_ig = str(rule.get('Main In-Game Rank', '')).strip()
+            base_rank = main_ig.title()
+            
+            # Map complex sheet rank names (e.g. "Ruby (Red Square) Event Planner") back to the base "Ruby"
+            if base_rank in PROGRESSION_RANKS:
+                sheet_rank_to_base[r_name] = base_rank
+                
+            lvl = get_rank_level(base_rank)
+            if lvl == -1:
+                lvl = get_rank_level(r_name)
+                
             if lvl >= 0:
                 roles = [r.strip().replace("'", "") for r in str(rule.get('Required Discord Roles', '')).split(',') if r.strip()]
                 for role in roles:
                     discord_role_to_level[role] = max(discord_role_to_level.get(role, -1), lvl)
+                    
+                if main_ig:
+                    ig_rank_to_level[main_ig.lower()] = max(ig_rank_to_level.get(main_ig.lower(), -1), lvl)
+                alt_ranks = [r.strip().lower() for r in str(rule.get('Allowed Alt Ranks', '')).split(',') if r.strip()]
+                for ar in alt_ranks:
+                    ig_rank_to_level[ar] = max(ig_rank_to_level.get(ar, -1), lvl)
 
     logger.info(f"Reading aggregated activity data from {input_db}...")
     try:
@@ -224,9 +249,20 @@ def generate_suggestions(roster_data=None, rank_rules=None):
     early_suggestions = []
     for user_id, records in user_data.items():
         records.sort(key=lambda x: x['month'])
+        user_name = records[-1]['name']
         
-        # Determine True Rank from the most recent active month
-        true_rank = next((get_highest_rank(rec['ranks']) for rec in reversed(records) if rec['total'] >= MIN_ACTIVITY_TO_VALIDATE_RANK), None)
+        # 1. Identity from Sheet: Determine True Rank from Google Sheet first
+        sheet_rank = ""
+        if user_id in user_roster_map:
+            sheet_rank = str(user_roster_map[user_id].get('Clan Rank', '')).strip()
+            
+        true_rank = sheet_rank_to_base.get(sheet_rank)
+        rank_source = "Sheet"
+        
+        # Fallback to DB history if unmapped or missing from the sheet
+        if not true_rank:
+            true_rank = next((get_highest_rank(rec['ranks']) for rec in reversed(records) if rec['total'] >= MIN_ACTIVITY_TO_VALIDATE_RANK and get_highest_rank(rec['ranks']) != "Wildcard"), None)
+            rank_source = "DB History"
         
         if not true_rank or true_rank in ("Staff", "Special", "Zenyte") or true_rank not in PROGRESSION_RANKS:
             continue
@@ -234,32 +270,54 @@ def generate_suggestions(roster_data=None, rank_rules=None):
         target_rank = PROGRESSION_RANKS[PROGRESSION_RANKS.index(true_rank) + 1]
         thresholds = PROMOTION_THRESHOLDS[target_rank]
         
+        logger.debug(f"[{user_name}] True Rank: {true_rank} (Source: {rank_source}) | Target: {target_rank}")
+        
         # --- 2/3 Consensus Check ---
         if user_id in user_roster_map:
             user = user_roster_map[user_id]
             target_lvl = PROGRESSION_RANKS.index(target_rank)
             platforms_at_or_above = 0
             
-            # 1. Sheet Rank
-            sheet_rank = str(user.get('Clan Rank', '')).strip()
-            if get_rank_level(sheet_rank) >= target_lvl:
+            # 1. Sheet Rank (Using mapped base rank to solve the -1 issue)
+            sheet_lvl = get_rank_level(true_rank)
+            if sheet_lvl >= target_lvl:
                 platforms_at_or_above += 1
                 
             # 2. Game Ranks
-            game_ranks = [r.strip() for r in str(user.get('Game Ranks', '')).split(',') if r.strip()]
-            if any(get_rank_level(r) >= target_lvl for r in game_ranks):
+            game_ranks = [r.strip().lower() for r in str(user.get('Game Ranks', '')).split(',') if r.strip()]
+            game_lvl = max([ig_rank_to_level.get(r, -1) for r in game_ranks] + [-1])
+            if game_lvl >= target_lvl:
                 platforms_at_or_above += 1
                 
             # 3. Discord Ranks
             discord_roles = [r.strip().replace("'", "") for r in str(user.get('Discord Ranks', '')).split(',') if r.strip()]
-            if any(discord_role_to_level.get(r, -1) >= target_lvl for r in discord_roles):
+            discord_lvl = max([discord_role_to_level.get(r, -1) for r in discord_roles] + [-1])
+            if discord_lvl >= target_lvl:
                 platforms_at_or_above += 1
                 
+            logger.debug(f"  └─ Consensus Check: Game={game_lvl >= target_lvl}, Discord={discord_lvl >= target_lvl}, Sheet={sheet_lvl >= target_lvl} -> ({platforms_at_or_above}/3)")
+                
             if platforms_at_or_above >= 2:
+                logger.debug(f"  └─ Skipping: Already holds {target_rank} (or higher) in {platforms_at_or_above}/3 ecosystems.")
                 continue # User already holds this rank (or higher) in at least 2/3 ecosystems
         
-        # Find earliest month they had this rank to start scoring
-        achieved_month = next((rec['month'] for rec in records if get_highest_rank(rec['ranks']) == true_rank), records[-1]['month'])
+        # --- History Tracking with Wildcard Support ---
+        # Traverse history backwards from the most recent month.
+        # We maintain their rank streak as long as the DB shows their true_rank OR a Wildcard.
+        achieved_month = records[-1]['month']
+        for rec in reversed(records):
+            rec_rank = get_highest_rank(rec['ranks'])
+            
+            if rec_rank == true_rank or rec_rank == "Wildcard":
+                achieved_month = rec['month']
+            elif rec_rank is None:
+                # No ranks recorded at all (e.g. inactive month) - skip over it to see if streak existed before gap
+                continue
+            else:
+                # Streak broken by an explicitly different progression rank
+                break
+                
+        logger.debug(f"  └─ Streak tracked back to {achieved_month}")
                 
         start_y, start_m = map(int, achieved_month.split('-'))
         latest_y, latest_m = map(int, records[-1]['month'].split('-'))
@@ -289,13 +347,18 @@ def generate_suggestions(roster_data=None, rank_rules=None):
         for _ in range(total_calendar_months):
             m_str = f"{curr_y:04d}-{curr_m:02d}"
             if m_str in record_dict:
-                net_pts = calculate_points(record_dict[m_str]['chats'], record_dict[m_str]['broadcasts'], chat_tiers, broadcast_tiers) - upkeep
+                earned = calculate_points(record_dict[m_str]['chats'], record_dict[m_str]['broadcasts'], chat_tiers, broadcast_tiers)
+                net_pts = earned - upkeep
                 total_points = max(0, total_points + net_pts)
+                logger.debug(f"    ├─ Month {m_str}: Scored {earned:.1f} pts, Upkeep -{upkeep:.1f}. Net: {net_pts:.1f}. Total: {total_points:.1f}")
             else:
                 total_points = max(0, total_points - upkeep) # Decay inactive months
+                logger.debug(f"    ├─ Month {m_str}: Inactive. Upkeep -{upkeep:.1f}. Total: {total_points:.1f}")
                 
             curr_m = 1 if curr_m == 12 else curr_m + 1
             curr_y += 1 if curr_m == 1 else 0
+            
+        logger.debug(f"  └─ Final Result: {total_points:.1f}/{thresholds['points']} points | {total_calendar_months}/{thresholds['min_months']} months")
                 
         suggestion_record = {
             'name': records[-1]['name'], 'current_rank': true_rank, 'target_rank': target_rank,
@@ -348,8 +411,16 @@ def generate_suggestions(roster_data=None, rank_rules=None):
 
 if __name__ == '__main__':
     import sys
+    import argparse
     from dotenv import load_dotenv
     from db_manager import DBManager
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true', help='Enable detailed debug logging')
+    args = parser.parse_args()
+    
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG" if args.debug else "INFO")
     
     env_path = PROJECT_ROOT / "shared_secrets" / ".env"
     load_dotenv(env_path)
