@@ -137,7 +137,7 @@ def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
         # Generate Markdown Reports
         logger.info("Executing Post-Audit Reporting Scripts...")
         activity_reporter.generate_activity_report()
-        rank_up_suggester.generate_suggestions()
+        rank_up_suggester.generate_suggestions(roster_data, rank_rules)
         inactivity_monitor.generate_inactivity_report(roster_data, rank_rules)
         
     db.trim_audit_logs(keep_last=AUDIT_LOG_RETENTION_COUNT)

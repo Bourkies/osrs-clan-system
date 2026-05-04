@@ -112,11 +112,10 @@ def get_highest_rank(ranks_str):
             
     return None
 
-def generate_suggestions():
+def generate_suggestions(roster_data=None, rank_rules=None):
     logger.info("Starting Clan Rank-Up Suggester...")
     input_db = SHARED_DATA_DIR / "databases" / "activity.db"
     output_md = SHARED_DATA_DIR / "reports" / "rank_up_suggestions.md"
-    roster_json = SHARED_DATA_DIR / "exports" / "roster_export.json"
     
     if not input_db.exists():
         logger.error(f"Input Database not found at {input_db}. Please run 'activity_reporter.py' first.")
@@ -126,17 +125,45 @@ def generate_suggestions():
     all_months = set()
     
     user_status_map = {}
-    if roster_json.exists():
-        try:
-            with open(roster_json, 'r', encoding='utf-8') as f:
-                roster_data = json.load(f)
-                for user in roster_data.get('members', []):
-                    user_status_map[str(user.get('discord_id'))] = {
-                        'system_flags': user.get('system_flags', []),
-                        'admin_flags': user.get('admin_flags', [])
-                    }
-        except Exception as e:
-            logger.warning(f"Could not read roster_export.json: {e}")
+    user_roster_map = {}
+    
+    if roster_data:
+        for user in roster_data:
+            did = str(user.get('Discord ID', '')).replace("'", "").strip()
+            user_roster_map[did] = user
+            user_status_map[did] = {
+                'system_flags': [f.strip() for f in str(user.get('System Flags', '')).split(',') if f.strip()],
+                'admin_flags': [f.strip() for f in str(user.get('Admin Flags', '')).split(',') if f.strip()]
+            }
+    else:
+        roster_json = SHARED_DATA_DIR / "exports" / "roster_export.json"
+        if roster_json.exists():
+            try:
+                with open(roster_json, 'r', encoding='utf-8') as f:
+                    r_data = json.load(f)
+                    for user in r_data.get('members', []):
+                        did = str(user.get('discord_id', '')).replace("'", "").strip()
+                        user_status_map[did] = {
+                            'system_flags': user.get('system_flags', []),
+                            'admin_flags': user.get('admin_flags', [])
+                        }
+            except Exception as e:
+                logger.warning(f"Could not read roster_export.json: {e}")
+
+    def get_rank_level(rank_str):
+        if rank_str in STAFF_RANKS or rank_str in SPECIAL_RANKS: return 999
+        if rank_str in PROGRESSION_RANKS: return PROGRESSION_RANKS.index(rank_str)
+        return -1
+        
+    discord_role_to_level = {}
+    if rank_rules:
+        for rule in rank_rules:
+            r_name = str(rule.get('Clan Rank', '')).strip()
+            lvl = get_rank_level(r_name)
+            if lvl >= 0:
+                roles = [r.strip().replace("'", "") for r in str(rule.get('Required Discord Roles', '')).split(',') if r.strip()]
+                for role in roles:
+                    discord_role_to_level[role] = max(discord_role_to_level.get(role, -1), lvl)
 
     logger.info(f"Reading aggregated activity data from {input_db}...")
     try:
@@ -206,6 +233,30 @@ def generate_suggestions():
             
         target_rank = PROGRESSION_RANKS[PROGRESSION_RANKS.index(true_rank) + 1]
         thresholds = PROMOTION_THRESHOLDS[target_rank]
+        
+        # --- 2/3 Consensus Check ---
+        if user_id in user_roster_map:
+            user = user_roster_map[user_id]
+            target_lvl = PROGRESSION_RANKS.index(target_rank)
+            platforms_at_or_above = 0
+            
+            # 1. Sheet Rank
+            sheet_rank = str(user.get('Clan Rank', '')).strip()
+            if get_rank_level(sheet_rank) >= target_lvl:
+                platforms_at_or_above += 1
+                
+            # 2. Game Ranks
+            game_ranks = [r.strip() for r in str(user.get('Game Ranks', '')).split(',') if r.strip()]
+            if any(get_rank_level(r) >= target_lvl for r in game_ranks):
+                platforms_at_or_above += 1
+                
+            # 3. Discord Ranks
+            discord_roles = [r.strip().replace("'", "") for r in str(user.get('Discord Ranks', '')).split(',') if r.strip()]
+            if any(discord_role_to_level.get(r, -1) >= target_lvl for r in discord_roles):
+                platforms_at_or_above += 1
+                
+            if platforms_at_or_above >= 2:
+                continue # User already holds this rank (or higher) in at least 2/3 ecosystems
         
         # Find earliest month they had this rank to start scoring
         achieved_month = next((rec['month'] for rec in records if get_highest_rank(rec['ranks']) == true_rank), records[-1]['month'])
@@ -296,4 +347,18 @@ def generate_suggestions():
         logger.success(f"Successfully generated rank up suggestions at {output_md} ({len(suggestions)} ready, {len(early_suggestions)} early consideration)")
 
 if __name__ == '__main__':
-    generate_suggestions()
+    import sys
+    from dotenv import load_dotenv
+    from db_manager import DBManager
+    
+    env_path = PROJECT_ROOT / "shared_secrets" / ".env"
+    load_dotenv(env_path)
+    
+    SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+    if not SPREADSHEET_ID:
+        logger.error(f"Missing SPREADSHEET_ID in {env_path}")
+        sys.exit(1)
+        
+    db = DBManager(SPREADSHEET_ID)
+    logger.info("Fetching latest data from Google Sheets for standalone execution...")
+    generate_suggestions(roster_data=db.get_all_records('Database'), rank_rules=db.get_all_records('Reference_Data'))
