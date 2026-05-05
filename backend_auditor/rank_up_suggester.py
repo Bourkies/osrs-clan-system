@@ -411,19 +411,15 @@ def generate_suggestions(roster_data=None, rank_rules=None):
 
 if __name__ == '__main__':
     import sys
-    import argparse
     from dotenv import load_dotenv
     from db_manager import DBManager
     
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--debug', action='store_true', help='Enable detailed debug logging')
-    args = parser.parse_args()
-    
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG" if args.debug else "INFO")
-    
     env_path = PROJECT_ROOT / "shared_secrets" / ".env"
     load_dotenv(env_path)
+    
+    logger.remove()
+    log_level = os.getenv('AUDITOR_LOG_LEVEL', 'INFO').upper()
+    logger.add(sys.stderr, level=log_level)
     
     SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
     if not SPREADSHEET_ID:

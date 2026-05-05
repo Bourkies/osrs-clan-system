@@ -21,7 +21,13 @@ import rank_up_suggester
 import inactivity_monitor
 
 load_dotenv(SHARED_SECRETS_DIR / ".env")
-logger.add(SHARED_DATA_DIR / "logs" / "auditor" / "auditor.log", rotation="10 MB", retention="1 month", level="INFO")
+
+LOG_LEVEL = os.getenv('AUDITOR_LOG_LEVEL', 'INFO').upper()
+
+# Configure loguru
+logger.remove() # Remove default stderr handler (which defaults to DEBUG)
+logger.add(sys.stderr, level=LOG_LEVEL)
+logger.add(SHARED_DATA_DIR / "logs" / "auditor" / "auditor.log", rotation="10 MB", retention="1 month", level=LOG_LEVEL)
 
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
