@@ -12,6 +12,8 @@ YELLOW = "\033[93m"
 RED = "\033[91m"
 CYAN = "\033[96m"
 DARK_GRAY = "\033[90m"
+MAGENTA = "\033[95m"
+LIGHT_BLUE = "\033[94m"
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -144,20 +146,28 @@ def main():
         print(f"Analyzing {len(target_accounts)} ranked members for pending sheet updates...")
         
     elif mode_choice == '5':
+        total_applied_mode_5 = 0
         while True:
             print(f"\n{CYAN}--- Mode 5: Verify Promotions from Text ---{RESET}")
             print("Paste your Discord announcement block below.")
-            print("When finished, press Enter on a new empty line, type 'DONE', and press Enter.")
+            print("When finished, press Enter on a new empty line, type 'DONE', and press Enter. (Or type 'EXIT' to quit)")
             pasted_lines = []
+            exit_requested = False
             while True:
                 try:
                     line = input()
+                    if line.strip().upper() == 'EXIT':
+                        exit_requested = True
+                        break
                     if line.strip().upper() == 'DONE':
                         break
                     pasted_lines.append(line)
                 except EOFError:
                     break
                     
+            if exit_requested:
+                break
+                
             full_text = "\n".join(pasted_lines)
             extracted_ids = list(set(re.findall(r'<@!?(\d+)>', full_text)))
             
@@ -182,19 +192,71 @@ def main():
                     print(f"{YELLOW}Warning: {len(missing_ids)} IDs were not found in the Database!{RESET}")
                     
                 if block_accounts:
-                    names = [str(acc['data'].get('Discord Name', '')).strip() for acc in block_accounts[:5]]
-                    print(f"First few members in this block: {GREEN}{', '.join(names)}{RESET}")
+                    print(f"\n{CYAN}--- Members in this block ---{RESET}")
+                    current_sheet_ranks = set()
+                    color_map = {}
+                    palette = [MAGENTA, LIGHT_BLUE, CYAN, GREEN, YELLOW]
                     
-                    print("\nWhat rank should this block be promoted to?")
-                    for i, r in enumerate(valid_ranks, 1):
-                        print(f"  {i}: {r}")
+                    def get_c(val):
+                        if val in ["None", "Unknown", ""]: return DARK_GRAY
+                        if val not in color_map:
+                            color_map[val] = palette[len(color_map) % len(palette)]
+                        return color_map[val]
                         
+                    for acc in block_accounts:
+                        row = acc['data']
+                        d_name = str(row.get('Discord Name', '')).strip() or "Unknown"
+                        d_id = str(row.get('Discord ID', '')).replace("'", "").strip() or "Unknown"
+                        rsns = str(row.get('RSNs', '')).strip() or "None"
+                        c_rank = str(row.get('Clan Rank', '')).strip() or "None"
+                        g_ranks = str(row.get('Game Ranks', '')).strip() or "None"
+                        
+                        d_ranks_raw = [r.strip() for r in str(row.get('Discord Ranks', '')).replace("'", "").split(',') if r.strip()]
+                        d_ranks_names = [role_id_to_name.get(r, r) for r in d_ranks_raw if r in managed_roles]
+                        d_ranks_str = ", ".join(d_ranks_names) if d_ranks_names else "None"
+                        
+                        if c_rank != "None":
+                            current_sheet_ranks.add(c_rank)
+                            
+                        c_rank_disp = f"{get_c(c_rank)}{c_rank}{RESET}"
+                        d_ranks_disp = f"{get_c(d_ranks_str)}{d_ranks_str}{RESET}"
+                        g_ranks_disp = f"{get_c(g_ranks)}{g_ranks}{RESET}"
+                            
+                        print(f"👤 {GREEN}{d_name}{RESET} {DARK_GRAY}[ID: {d_id}]{RESET} | RSNs: {rsns}")
+                        print(f"   ├─ Sheet Rank: {c_rank_disp}")
+                        print(f"   ├─ Discord: {d_ranks_disp}")
+                        print(f"   └─ Game: {g_ranks_disp}")
+                        
+                    if len(current_sheet_ranks) > 1:
+                        print(f"\n{YELLOW}⚠️ WARNING: The users in this block currently have different Sheet ranks: {', '.join(current_sheet_ranks)}{RESET}")
+                    
+                    cancel_block = False
                     while True:
-                        choice = input(f"Select a rank [1-{len(valid_ranks)}]: ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(valid_ranks):
-                            target_rank = valid_ranks[int(choice)-1]
+                        print("\nWhat rank should this block be promoted to?")
+                        for i, r in enumerate(valid_ranks, 1):
+                            print(f"  {i}: {r}")
+                        print("  0: ❌ Cancel / Retry (Paste a new block)")
+                            
+                        while True:
+                            choice = input(f"Select a rank [1-{len(valid_ranks)}] or '0' to cancel: ").strip()
+                            if choice == '0':
+                                cancel_block = True
+                                break
+                            if choice.isdigit() and 1 <= int(choice) <= len(valid_ranks):
+                                target_rank = valid_ranks[int(choice)-1]
+                                break
+                            print("Invalid input.")
+                            
+                        if cancel_block:
                             break
-                        print("Invalid input.")
+                            
+                        confirm = input(f"\nYou selected {YELLOW}'{target_rank}'{RESET}. Is this correct? [y/n]: ").strip().lower()
+                        if confirm == 'y':
+                            break
+                        print(f"{RED}Selection cancelled. Let's try again.{RESET}")
+                        
+                    if cancel_block:
+                        continue
                         
                     target_rule = rank_rules[target_rank]
                     
@@ -230,7 +292,7 @@ def main():
                                 issues.append(f"Missing Discord Role(s): {', '.join(missing_names)}")
                             if not game_match: 
                                 issues.append(f"Missing Game Rank '{target_rule['main_rank']}'")
-                            needs_manual_fix.append(f"{d_name}: {', '.join(issues)}")
+                            needs_manual_fix.append((d_name, d_id, current_rank, issues))
                             
                     print(f"\n{CYAN}--- Verification Report for '{target_rank}' ---{RESET}")
                     print(f"{GREEN}✅ Perfectly Synced:{RESET} {len(perfect_sync)}")
@@ -244,8 +306,8 @@ def main():
                             
                     print(f"\n{RED}❌ Action Required (Discord/Game mismatch):{RESET} {len(needs_manual_fix)}")
                     if needs_manual_fix:
-                        for issue in needs_manual_fix:
-                            print(f"  - {issue}")
+                        for name, did, cr, issues in needs_manual_fix:
+                            print(f"  - {name}: {', '.join(issues)}")
                             
                     if ready_for_sheet:
                         print(f"\nWould you like to automatically update the Sheet Rank to '{target_rank}' for the {len(ready_for_sheet)} ready members?")
@@ -271,21 +333,49 @@ def main():
                             db.batch_update_by_id('Database', 'Discord ID', batch_updates)
                             db.append_audit_logs([row[3] for row in audit_rows])
                             print(f"{GREEN}✅ Successfully updated {len(ready_for_sheet)} members!{RESET}")
+                            total_applied_mode_5 += len(ready_for_sheet)
                             
-                            print(f"\nWould you like to run a silent audit to update system flags? {DARK_GRAY}(This will clear 'Rank Mismatch' flags){RESET}")
-                            while True:
-                                sync_after = input("Select [y/n]: ").strip().lower()
-                                if sync_after in ['y', 'n']:
-                                    break
-                                    
-                            if sync_after == 'y':
-                                print(f"\n{CYAN}Running silent audit... Please wait.{RESET}")
-                                orchestrator.run_orchestrator(force_wom=False, skip_webhook=True, sync_only=False)
-                                print(f"{GREEN}Audit complete!{RESET}\n")
+                    if needs_manual_fix:
+                        print(f"\nWould you like to FORCE update the Sheet Rank to '{target_rank}' for the {len(needs_manual_fix)} mismatched members anyway?")
+                        while True:
+                            force_choice = input("Select [y/n]: ").strip().lower()
+                            if force_choice in ['y', 'n']:
+                                break
+                                
+                        if force_choice == 'y':
+                            batch_updates = []
+                            audit_rows = []
+                            timestamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                            
+                            for name, did, cr, issues in needs_manual_fix:
+                                batch_updates.append({'id': did, 'col_name': 'Clan Rank', 'value': target_rank})
+                                if cr:
+                                    msg = f"Manual Update (Forced) - {name} ({did}): Updated Clan Rank from '{cr}' to '{target_rank}'."
+                                else:
+                                    msg = f"Manual Update (Forced) - {name} ({did}): Assigned Clan Rank '{target_rank}'."
+                                audit_rows.append([timestamp, 'CLI Setup Tool', 'Admin', msg])
+                                
+                            print(f"{CYAN}Applying forced updates to database...{RESET}")
+                            db.batch_update_by_id('Database', 'Discord ID', batch_updates)
+                            db.append_audit_logs([row[3] for row in audit_rows])
+                            print(f"{GREEN}✅ Successfully force-updated {len(needs_manual_fix)} members!{RESET}")
+                            total_applied_mode_5 += len(needs_manual_fix)
             
             print("\nWould you like to process another block?")
             if input("Select [y/n]: ").strip().lower() != 'y':
                 break
+                
+        if total_applied_mode_5 > 0:
+            print(f"\nWould you like to run a silent audit to update system flags? {DARK_GRAY}(This will clear 'Rank Mismatch' flags){RESET}")
+            while True:
+                sync_after = input("Select [y/n]: ").strip().lower()
+                if sync_after in ['y', 'n']:
+                    break
+                    
+            if sync_after == 'y':
+                print(f"\n{CYAN}Running silent audit... Please wait.{RESET}")
+                orchestrator.run_orchestrator(force_wom=False, skip_webhook=True, sync_only=False)
+                print(f"{GREEN}Audit complete!{RESET}\n")
         return
 
     auto_apply = False
