@@ -62,15 +62,20 @@ def release_lock():
     except Exception as e:
         logger.error(f"Error releasing lock: {e}")
 
-def cleanup_old_files(directory: Path, retention_days: int):
-    """Deletes files in a directory older than a specified number of days based on filename timestamp."""
+def cleanup_old_files(directory: Path, retention_days: int, max_files: int = 0):
+    """
+    Deletes files in a directory older than a specified number of days based on filename timestamp,
+    and/or limits the number of files kept per prefix group.
+    """
     if not directory.exists():
         logger.warning(f"Cleanup directory not found, skipping: {directory}")
         return
 
-    logger.info(f"Scanning '{directory.name}' for files to clean up...")
+    logger.info(f"Scanning '{directory.name}' for files to clean up (retention_days={retention_days}, max_files={max_files})...")
     cutoff_date = datetime.now() - timedelta(days=retention_days)
     files_deleted = 0
+    
+    prefix_groups = {}
     
     for item in directory.iterdir():
         if item.is_file():
@@ -81,16 +86,41 @@ def cleanup_old_files(directory: Path, retention_days: int):
                     file_date_str = match.group(1)
                     file_date = datetime.strptime(file_date_str, '%Y-%m-%d')
                     
-                    if file_date < cutoff_date:
-                        logger.info(f"  - Deleting old file: {item.name}")
-                        item.unlink()  # Using Path.unlink() to delete the file
+                    # 1. Age-based cleanup
+                    if retention_days > 0 and file_date < cutoff_date:
+                        logger.info(f"  - Deleting old file (exceeded age limit): {item.name}")
+                        item.unlink()
                         files_deleted += 1
+                        continue
+                    
+                    # Group remaining files by their prefix for count-based limit
+                    if max_files > 0:
+                        prefix = item.name[:match.start()].rstrip("-_")
+                        if prefix not in prefix_groups:
+                            prefix_groups[prefix] = []
+                        prefix_groups[prefix].append(item)
                 except ValueError:
                     logger.debug(f"Could not parse date from filename, skipping: {item.name}")
                 except Exception as e:
-                    logger.error(f"Error deleting file {item.name}: {e}")
+                    logger.error(f"Error during cleanup scan for file {item.name}: {e}")
 
-    logger.info(f"--> Cleanup complete for '{directory.name}'. Deleted {files_deleted} old files.")
+    # 2. Count-based cleanup
+    if max_files > 0:
+        for prefix, files in prefix_groups.items():
+            if len(files) > max_files:
+                # Sort alphabetically by name (chronological, since they contain timestamps like YYYY-MM-DD_HH-MM-SS)
+                files_sorted = sorted(files, key=lambda x: x.name)
+                files_to_delete = files_sorted[:-max_files]
+                logger.info(f"  - Prefix '{prefix}' has {len(files)} files, limit is {max_files}. Deleting {len(files_to_delete)} oldest files.")
+                for item in files_to_delete:
+                    try:
+                        logger.info(f"  - Deleting old file (exceeded count limit): {item.name}")
+                        item.unlink()
+                        files_deleted += 1
+                    except Exception as e:
+                        logger.error(f"Error deleting file {item.name}: {e}")
+
+    logger.info(f"--> Cleanup complete for '{directory.name}'. Deleted {files_deleted} files in total.")
 
 
 def run_script(script_path: Path, stop_on_error: bool = True) -> float:
@@ -157,13 +187,14 @@ def run_pipeline():
     # --- Run Cleanup ---
     cleanup_config = config.get('cleanup_settings', {})
     retention_days = cleanup_config.get('log_retention_days', 0)
+    max_files = cleanup_config.get('max_summary_files', 0)
     
-    if retention_days > 0:
-        logger.info(f"--- Running cleanup for files older than {retention_days} days ---")
-        cleanup_old_files(LOGS_DIR, retention_days)
-        cleanup_old_files(SUMMARIES_DIR, retention_days)
+    if retention_days > 0 or max_files > 0:
+        logger.info(f"--- Running cleanup (retention_days={retention_days}, max_summary_files={max_files}) ---")
+        cleanup_old_files(LOGS_DIR, retention_days, max_files)
+        cleanup_old_files(SUMMARIES_DIR, retention_days, max_files)
     else:
-        logger.info("--- File cleanup is disabled (log_retention_days is 0 or not set) ---")
+        logger.info("--- File cleanup is disabled (both log_retention_days and max_summary_files are 0 or not set) ---")
 
     webhook_url = config.get('secrets', {}).get('discord_webhook_url')
     project_name = config.get('general', {}).get('project_name', 'ETL Process')

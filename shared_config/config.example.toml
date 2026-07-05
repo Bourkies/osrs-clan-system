@@ -45,6 +45,8 @@ run_post_pbs_script = true
 [cleanup_settings]
 # Number of days to keep log and summary files. Set to 0 to disable cleanup.
 log_retention_days = 30
+# Maximum number of summary files to keep per script/type. Set to 0 to disable count-based cleanup.
+max_summary_files = 4
 
 #-----------------------------------------------------------------------
 # File Path Settings
