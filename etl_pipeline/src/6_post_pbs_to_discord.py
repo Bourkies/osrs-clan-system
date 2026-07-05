@@ -142,6 +142,36 @@ class PBPosterClient(discord.Client):
             logger.info("Processing complete. Closing connection.")
             await self.close()
 
+    def embeds_are_equal(self, embed1: discord.Embed, embed2: discord.Embed) -> bool:
+        """Compares two embeds, ignoring dynamic fields like timestamp, footer, and attachment details."""
+        d1 = embed1.to_dict()
+        d2 = embed2.to_dict()
+        
+        # Remove dynamic/transient fields
+        for d in (d1, d2):
+            d.pop('timestamp', None)
+            d.pop('footer', None)
+            d.pop('type', None) # Discord sometimes adds 'type': 'rich' on fetch
+            
+            # Normalize thumbnail keys to only compare the URL
+            if 'thumbnail' in d and 'url' in d['thumbnail']:
+                d['thumbnail'] = {'url': d['thumbnail']['url']}
+                
+            # Normalize image keys to only compare the URL
+            if 'image' in d and 'url' in d['image']:
+                d['image'] = {'url': d['image']['url']}
+                
+        # Handle attachment:// path mapping vs fetched CDN URLs
+        if 'thumbnail' in d1 and 'thumbnail' in d2:
+            u1 = d1['thumbnail'].get('url', '')
+            u2 = d2['thumbnail'].get('url', '')
+            if u1.startswith('attachment://') and u2:
+                filename = u1.replace('attachment://', '')
+                if filename in u2:
+                    d2['thumbnail']['url'] = u1
+                    
+        return d1 == d2
+
     async def update_pbs(self):
         """Fetches, creates, or edits PB messages in the configured channel."""
         channel_id_val = self.secrets.get('discord_pb_channel_id')
@@ -312,9 +342,12 @@ class PBPosterClient(discord.Client):
                     # Note: Editing a message does not allow changing the attached file.
                     # If you change the image in the config, you must delete the old
                     # message in Discord to force the script to post a new one with the new image.
-                    await message.edit(embed=embed)
-                    self.messages_updated += 1
-                    logger.info(f"Updated embed for '{group_title}'.")
+                    if message.embeds and self.embeds_are_equal(embed, message.embeds[0]):
+                        logger.info(f"Embed for '{group_title}' is unchanged. Skipping update.")
+                    else:
+                        await message.edit(embed=embed)
+                        self.messages_updated += 1
+                        logger.info(f"Updated embed for '{group_title}'.")
                 else:
                     new_message = await channel.send(embed=embed, file=discord_file)
                     self.state[group_title] = new_message.id
