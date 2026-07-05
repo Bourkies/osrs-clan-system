@@ -17,7 +17,7 @@ This folder contains the files for the Python script, "The Auditor," which acts 
 - `sqlite_manager.py`: Local database manager for tracking raw JSON snapshots and a normalized history of player name changes.
 - `audit_logic.py`: An extensible, Object-Oriented rules engine (`BaseAudit`) that cross-references synced data to flag discrepancies, manages `System Flags`, and formats Discord webhook reports.
 - `dashboard_exporter.py`: Generates a complete JSON roster export (including IDs, flags, and name-change history) for the ETL Dashboard. Uses atomic writes to prevent database locking.
-- `CLI Tools`: Several setup scripts (e.g., `account_linker.py`, `rank_matcher.py`) designed to help administrators rapidly sort untracked data.
+- `CLI Tools`: Several setup scripts (e.g., `account_linker.py`, `rank_matcher.py`, `audit_resolver.py`) designed to help administrators rapidly sort untracked data.
 
 *(Note: State data, logs, and configurations have been abstracted to the root `shared_data` and `shared_secrets` folders.)*
 
@@ -85,7 +85,7 @@ For testing and running the script locally, it is highly recommended to use a Py
 
 ## Setup & Onboarding Tools
 
-If you are setting up the database for the first time, you can use the built-in CLI tools locally:
+If you are setting up the database for the first time, or resolving daily warnings, you can use the built-in CLI tools locally:
 
 1.  **The Account Linker (`python account_linker.py`)**
     *   *Requirement:* You must run `run_auditor.py` at least once so it caches WOM IDs.
@@ -95,7 +95,11 @@ If you are setting up the database for the first time, you can use the built-in 
     *   *Requirement:* Ensure your `Reference_Data` tab is filled out with your clan's Discord Role IDs and In-Game Rank names.
     *   *Usage:* Loops through all members missing a Clan Rank, suggesting the most logical rank based on their existing Discord roles or in-game rank, allowing you to bulk-assign missing ranks safely.
 
-3.  **The Dashboard Exporter (`dashboard_exporter.py`)**
+3.  **The Audit Resolver (`python audit_resolver.py`)**
+    *   *Requirement:* Run a silent audit (which you can do via the tool's startup prompt) so system flags are updated in Google Sheets.
+    *   *Usage:* Interactive menu that loops through categories of warning flags (Missing from In-Game Clan, Returning Members, Rank Mismatch, Left Discord, Multiple Clans, Missing RSNs) allowing you to skip/enter sections and resolve issues by applying appropriate Ignore or On Leave flags.
+
+4.  **The Dashboard Exporter (`dashboard_exporter.py`)**
     *   *Usage:* Runs automatically at the end of the daily audit. It exports a JSON file bridging the Auditor with the `etl_pipeline`. No manual execution is typically required.
 
 ## Common Edge Cases & Troubleshooting

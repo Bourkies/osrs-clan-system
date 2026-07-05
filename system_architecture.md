@@ -251,7 +251,7 @@ To avoid making assumptions, the system uses explicit state and error flags. Bec
 * **`Multiple Clans`**: The user has at least one account in the target clan and at least one account in another clan.
 * **`Archived`**: The user has no clan rank, no managed discord roles, and is not in the WOM clan. The Auditor will skip most API lookups for them to improve performance.
 
-### **Admin Flags (`Database` Tab - Set via Web UI)**
+### **Admin Flags (`Database` Tab - Set via Web UI or CLI Resolver)**
 * **`Banned`**: Used to blacklist a user. If a user with this flag rejoins the Discord server, the Auditor will append them, but the "Banned" flag will persist, alerting Admins in reports.
 * **`On Leave`**: A standard flag for members on an approved hiatus.
-* **Acknowledge System Flags**: Admins can type the exact name of a System Flag (e.g., `Rank Mismatch`) here to tell the Auditor to ignore the discrepancy.
+* **Acknowledge System Flags**: Admins can type the exact name of a System Flag (e.g., `Rank Mismatch`) here to tell the Auditor to ignore the discrepancy. This can be done manually via the Web UI or interactively in bulk using the `audit_resolver.py` CLI tool.

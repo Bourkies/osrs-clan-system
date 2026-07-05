@@ -55,6 +55,9 @@ Run the Account Linker (Fuzzy match unlinked accounts):
 Run the Rank Matcher (Bulk-assign missing clan ranks):
 `docker compose exec backend_auditor python backend_auditor/rank_matcher.py`
 
+Run the Audit Resolver (Interactively resolve warning flags):
+`docker compose exec backend_auditor python backend_auditor/audit_resolver.py`
+
 ---
 
 ## ⚙️ ETL Pipeline Commands
@@ -108,6 +111,7 @@ Enable the env: `.\venv\Scripts\Activate.ps1`
 **CLI Admin Tools:**
 `python backend_auditor/account_linker.py`
 `python backend_auditor/rank_matcher.py` Note: 2-y-n
+`python backend_auditor/audit_resolver.py`
 
 
 ### Running ETL Pipeline Locally
