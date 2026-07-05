@@ -27,9 +27,11 @@ def build_interval_map(roster_payload, buffer_hours, df_all_events):
     t_max = pd.Timestamp.max.tz_localize('UTC')
     t_min = pd.Timestamp.min.tz_localize('UTC')
     
-    # Create a canonicalized series for ultra-fast Pandas masking
+    # Create a canonicalized series for ultra-fast Pandas masking using mapping
     if not df_all_events.empty:
-        df_all_events['Canon_Username'] = df_all_events['Username'].apply(canonicalize_rsn)
+        unique_all_events_usernames = df_all_events['Username'].dropna().unique()
+        canon_all_events_map = {u: canonicalize_rsn(u) for u in unique_all_events_usernames}
+        df_all_events['Canon_Username'] = df_all_events['Username'].map(canon_all_events_map)
 
     for member in roster_payload.get("members", []):
         discord_id = member.get("discord_id")
@@ -95,37 +97,80 @@ def apply_mapping(df, interval_map, sync_config):
         
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True, format='mixed')
     
+    # 1. Pre-canonicalize usernames using a lookup dict to avoid redundant string work
+    unique_usernames = df['Username'].dropna().unique()
+    canon_user_map = {u: canonicalize_rsn(u) for u in unique_usernames}
+    
+    # 2. Separate usernames in interval_map into single-interval and multi-interval
+    single_interval_map = {}
+    multi_interval_map = {}
+    for username, ivs in interval_map.items():
+        if len(ivs) == 1:
+            single_interval_map[username] = ivs[0]
+        else:
+            multi_interval_map[username] = ivs
+
     discord_ids = []
     discord_names = []
+    t_min = pd.Timestamp.min.tz_localize('UTC')
     t_max = pd.Timestamp.max.tz_localize('UTC')
     
     tolerance_days = sync_config.get("wom_sync_delay_tolerance_days", 35)
     tolerance_delta = pd.Timedelta(days=tolerance_days)
     
-    for _, row in df.iterrows():
-        username = canonicalize_rsn(row.get('Username', ''))
-        timestamp = row['Timestamp']
-        
+    # 3. Iterate over zipped lists directly to avoid Pandas iterrows Series overhead
+    usernames = df['Username'].tolist()
+    timestamps = df['Timestamp'].tolist()
+    
+    for username_raw, timestamp in zip(usernames, timestamps):
+        username = canon_user_map.get(username_raw, "")
+        if not username:
+            discord_ids.append(None)
+            discord_names.append(None)
+            continue
+            
         match = None
-        ivs = interval_map.get(username, [])
         
-        if ivs:
+        # Check single-interval map first (almost all cases)
+        if username in single_interval_map:
+            iv = single_interval_map[username]
+            if pd.notna(timestamp) and iv['start'] <= timestamp <= iv['end']:
+                match = iv
+            elif pd.notna(timestamp):
+                # Fallback within tolerance. Ignore infinite bounds to prevent OutOfBoundsDatetime
+                is_within_tolerance = False
+                if iv['start'] != t_min and abs(timestamp - iv['start']) <= tolerance_delta:
+                    is_within_tolerance = True
+                if iv['end'] != t_max and abs(timestamp - iv['end']) <= tolerance_delta:
+                    is_within_tolerance = True
+                if is_within_tolerance:
+                    match = iv
+            else:
+                # Missing timestamp fallback
+                if iv['end'] == t_max:
+                    match = iv
+        elif username in multi_interval_map:
+            ivs = multi_interval_map[username]
             if pd.notna(timestamp):
-                # Find the specific interval that encompasses this broadcast's timestamp
                 valid_ivs = [iv for iv in ivs if iv['start'] <= timestamp <= iv['end']]
                 if valid_ivs:
                     match = valid_ivs[0]
                 else:
-                    # Fallback: If out of bounds (WOM sync delay), but this name has ONLY EVER
-                    # belonged to ONE Discord ID in our history, map it if within tolerance.
                     unique_owners = {iv['discord_id'] for iv in ivs}
                     if len(unique_owners) == 1:
-                        ts_py = timestamp.to_pydatetime()
-                        min_dist = min(min(abs(ts_py - iv['start'].to_pydatetime()), abs(ts_py - iv['end'].to_pydatetime())) for iv in ivs)
-                        if min_dist <= tolerance_delta.to_pytimedelta():
+                        min_dist = None
+                        for iv in ivs:
+                            if iv['start'] != t_min:
+                                dist = abs(timestamp - iv['start'])
+                                if min_dist is None or dist < min_dist:
+                                    min_dist = dist
+                            if iv['end'] != t_max:
+                                dist = abs(timestamp - iv['end'])
+                                if min_dist is None or dist < min_dist:
+                                    min_dist = dist
+                        if min_dist is not None and min_dist <= tolerance_delta:
                             match = ivs[0]
             else:
-                # Fallback for missing timestamps: check if it is CURRENTLY owned by someone
                 current_ivs = [iv for iv in ivs if iv['end'] == t_max]
                 if current_ivs:
                     match = current_ivs[0]
@@ -151,11 +196,14 @@ def assign_retention_flags(df, last_activity, roster_dict, sync_config):
     exclude_instantly = sync_config.get("exclude_discord_leavers_instantly", False)
     grace_delta = pd.Timedelta(days=leaver_grace_period_days)
     
-    is_retained_list = []
+    # Pre-calculate retention flags at the player entity level to avoid iterrows loop overhead
+    unique_pairs = df[['Discord_ID', 'Username']].drop_duplicates()
     
-    for _, row in df.iterrows():
-        discord_id = row.get('Discord_ID')
-        username = canonicalize_rsn(row.get('Username', ''))
+    retention_map = {}
+    for _, row in unique_pairs.iterrows():
+        discord_id = row['Discord_ID']
+        username_raw = row['Username']
+        username = canonicalize_rsn(username_raw)
         entity_id = discord_id if pd.notna(discord_id) and discord_id else username
         
         last_active = last_activity.get(entity_id, pd.Timestamp('1970-01-01', tz='UTC'))
@@ -175,12 +223,11 @@ def assign_retention_flags(df, last_activity, roster_dict, sync_config):
             else:
                 is_retained = True
         else:
-            # Unmapped rows (Not in JSON / No Discord ID)
             is_retained = False
             
-        is_retained_list.append(is_retained)
+        retention_map[(discord_id, username_raw)] = is_retained
         
-    df['Is_Retained'] = is_retained_list
+    df['Is_Retained'] = [retention_map.get((d, u), False) for d, u in zip(df['Discord_ID'].tolist(), df['Username'].tolist())]
     return df
 
 def main():
@@ -264,8 +311,10 @@ def main():
             df_broadcasts_mapped[['Username', 'Discord_ID', 'Timestamp']]
         ]).dropna(subset=['Timestamp'])
         
+        unique_combined_names = df_combined['Username'].dropna().unique()
+        canon_combined_map = {n: canonicalize_rsn(n) for n in unique_combined_names}
         df_combined['Entity_ID'] = df_combined['Discord_ID'].fillna(
-            df_combined['Username'].apply(canonicalize_rsn)
+            df_combined['Username'].map(canon_combined_map)
         )
         last_activity = df_combined.groupby('Entity_ID')['Timestamp'].max()
         
