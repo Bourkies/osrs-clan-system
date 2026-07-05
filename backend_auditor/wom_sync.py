@@ -141,6 +141,14 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
                 continue
 
         if not wom_ids_str.strip():
+            # If the user has no WOM IDs, ensure their OSRS-related columns are cleared
+            needs_clear = False
+            for col in ['RSNs', 'Account Clan', 'Game Ranks', 'Name History']:
+                if str(row.get(col, '')).strip():
+                    batch_updates.append({'id': clean_id, 'col_name': col, 'value': ''})
+                    needs_clear = True
+            if needs_clear:
+                audit_logs.append(f"Data Update - {discord_name} ({clean_id}): Cleared WOM data columns because no WOM IDs are linked.")
             continue
             
         wids = [w.strip() for w in wom_ids_str.split(',') if w.strip()]
