@@ -336,6 +336,7 @@ class MemberNoRsnLinkedAudit(BaseAudit):
     title = '⚠️ Ranked Members Missing RSNs'
     description = "These members have a Clan Rank (spreadsheet) or Discord roles, but have no OSRS accounts linked in the database."
     type = 'member'
+    enable_webhook = False
 
     def execute(self, context, member):
         clan_rank = str(member.get('Clan Rank', '')).strip()
@@ -711,7 +712,7 @@ ACTIVE_AUDITS = [
     GlobalBannedAudit(),
     MemberLeftDiscordAudit(),
     GeneralRankMismatchAudit(),
-    # MemberNoRsnLinkedAudit(),    
+    MemberNoRsnLinkedAudit(),    
     MemberMultipleClansAudit(),
     MemberAltLimitAudit(),
     MemberBannedInClanAudit(),
