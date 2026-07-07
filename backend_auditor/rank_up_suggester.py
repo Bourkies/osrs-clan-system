@@ -360,11 +360,34 @@ def generate_suggestions(roster_data=None, rank_rules=None):
             
         logger.debug(f"  └─ Final Result: {total_points:.1f}/{thresholds['points']} points | {total_calendar_months}/{thresholds['min_months']} months")
                 
+        # Get account list details
+        member = user_roster_map.get(user_id, {})
+        rsns_raw = str(member.get('RSNs', '')).strip()
+        rsns_list = [r.strip() for r in rsns_raw.split(',') if r.strip()]
+        
+        ranks_raw = str(member.get('Game Ranks', '')).strip()
+        ranks_list = [r.strip() for r in ranks_raw.split(',') if r.strip()]
+        
+        clans_raw = str(member.get('Account Clan', '')).strip()
+        clans_list = [c.strip() for c in clans_raw.split(',') if c.strip()]
+        
+        account_lines = []
+        for i in range(len(rsns_list)):
+            rsn = rsns_list[i]
+            rank = ranks_list[i] if i < len(ranks_list) else "Unknown"
+            clan = clans_list[i] if i < len(clans_list) else "Unknown"
+            account_lines.append(f"    * `{rsn}` (Rank: `{rank}` | Clan: *{clan}*)")
+            
+        if not account_lines:
+            account_lines.append("    * *None*")
+
         suggestion_record = {
+            'discord_id': user_id,
             'name': records[-1]['name'], 'current_rank': true_rank, 'target_rank': target_rank,
             'points': total_points, 'required_points': thresholds['points'],
             'months_in_rank': total_calendar_months, 'min_months': thresholds['min_months'],
-            'warning_str': warning_str
+            'warning_str': warning_str,
+            'account_lines': account_lines
         }
         
         meets_full = (total_points >= thresholds['points'] and total_calendar_months >= thresholds['min_months'])
@@ -393,18 +416,24 @@ def generate_suggestions(roster_data=None, rank_rules=None):
         suggestions.sort(key=lambda x: (PROGRESSION_RANKS.index(x['target_rank']), x['points']), reverse=True)
         lines.append("## 🎯 Ready for Promotion\n")
         for s in suggestions:
-            lines.append(f"* **{s['name']}**{s['warning_str']}")
+            lines.append(f"* **{s['name']}** <@{s['discord_id']}>{s['warning_str']}")
             lines.append(f"  * Rank: {s['current_rank']} ➡️ **{s['target_rank']}**")
-            lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months\n")
+            lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months")
+            lines.append("  * Accounts:")
+            lines.extend(s['account_lines'])
+            lines.append("")
             
     if early_suggestions:
         early_suggestions.sort(key=lambda x: (PROGRESSION_RANKS.index(x['target_rank']), x['points']), reverse=True)
         lines.append("## ⏳ Close to Promotion (Early Consideration)")
         lines.append("> *Members who have reached at least 80% of the required points and are within 1 month of the time requirement.*\n")
         for s in early_suggestions:
-            lines.append(f"* **{s['name']}**{s['warning_str']}")
+            lines.append(f"* **{s['name']}** <@{s['discord_id']}>{s['warning_str']}")
             lines.append(f"  * Rank: {s['current_rank']} ➡️ **{s['target_rank']}**")
-            lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months\n")
+            lines.append(f"  * Points: **{s['points']:.1f}** / {s['required_points']} | Time in Rank: **{s['months_in_rank']}** / {s['min_months']} Months")
+            lines.append("  * Accounts:")
+            lines.extend(s['account_lines'])
+            lines.append("")
             
     if safe_write_report(output_md, "\n".join(lines)):
         logger.success(f"Successfully generated rank up suggestions at {output_md} ({len(suggestions)} ready, {len(early_suggestions)} early consideration)")
