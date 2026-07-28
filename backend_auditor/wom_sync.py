@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import math
 from datetime import datetime
 from urllib.parse import quote
 from loguru import logger
@@ -122,6 +124,45 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
     for wid, data in group_roster.items():
         if data['status'] == 'banned':
             banned_members.append({'wom_id': wid, 'rsn': data['rsn']})
+
+    # --- Pre-calculate non-group WOM accounts rolling batch update ---
+    all_non_group_wids = set()
+    for row in all_records:
+        sys_flags = str(row.get('System Flags', ''))
+        wom_ids_str = str(row.get('WOM IDs', ''))
+        if not wom_ids_str.strip():
+            continue
+        wids_list = [w.strip() for w in wom_ids_str.split(',') if w.strip()]
+        if SystemFlag.ARCHIVED.value in sys_flags:
+            if not any(wid in group_roster for wid in wids_list):
+                continue
+        for wid in wids_list:
+            if wid not in group_roster:
+                all_non_group_wids.add(wid)
+
+    now_ts = time.time()
+    player_min_ttl = getattr(wom_client, 'player_min_ttl', 259200) # 3 days
+    player_max_ttl = getattr(wom_client, 'player_max_ttl', 604800) # 7 days
+    batch_percent = getattr(wom_client, 'player_batch_percent', 0.09) # 9%
+
+    stale_candidates = [] # (wid, age)
+    hard_expired = set()
+
+    for wid in all_non_group_wids:
+        cache_ts = wom_client.get_cache_timestamp(f"player_{wid}")
+        age = now_ts - cache_ts
+        if age >= player_max_ttl:
+            hard_expired.add(wid)
+        elif age >= player_min_ttl:
+            stale_candidates.append((wid, age))
+
+    stale_candidates.sort(key=lambda x: x[1], reverse=True) # Oldest first
+    batch_limit = math.ceil(len(all_non_group_wids) * batch_percent) if all_non_group_wids else 0
+    batch_to_refresh = set(wid for wid, _ in stale_candidates[:batch_limit])
+    force_refresh_wids = batch_to_refresh.union(hard_expired)
+
+    if all_non_group_wids:
+        logger.info(f"Non-group WOM Accounts: {len(all_non_group_wids)} total ({len(stale_candidates)} >= 3d old, {len(hard_expired)} >= 7d old). Refreshing batch of {len(force_refresh_wids)} accounts.")
             
     batch_updates = []
     
@@ -171,7 +212,8 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
             else:
                 # API / Cache hit (Fallback for players not in the clan)
                 try:
-                    player_data = wom_client.get(f'/players/id/{wid}', cache_key=f"player_{wid}")
+                    should_force = (wid in force_refresh_wids)
+                    player_data = wom_client.get(f'/players/id/{wid}', cache_key=f"player_{wid}", force_refresh=should_force, ttl=player_min_ttl)
                     
                     if player_data:
                         rsn = player_data.get('displayName') or player_data.get('username') or 'Unknown'
@@ -179,7 +221,7 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
                         
                         username = player_data.get('username')
                         if username:
-                            groups_res = wom_client.get(f'/players/{quote(username)}/groups', cache_key=f"groups_{wid}")
+                            groups_res = wom_client.get(f'/players/{quote(username)}/groups', cache_key=f"groups_{wid}", force_refresh=should_force, ttl=player_min_ttl)
                             if groups_res:
                                 valid_groups = []
                                 for g in groups_res:

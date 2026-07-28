@@ -7,7 +7,7 @@ from loguru import logger
 from constants import SHARED_DATA_DIR
 
 class WomClient:
-    def __init__(self, cache_dir=None, use_cache=True, cache_ttl=86400):
+    def __init__(self, cache_dir=None, use_cache=True, cache_ttl=None):
         self.base_url = 'https://api.wiseoldman.net/v2'
         self.headers = {'User-Agent': os.getenv('WOM_USER_AGENT', 'OSRS Clan Management Tool')}
 
@@ -21,7 +21,14 @@ class WomClient:
         self.cache_dir = cache_dir if cache_dir else str(SHARED_DATA_DIR / 'caches')
         self.cache_file = os.path.join(self.cache_dir, 'wom_cache.json')
         self.use_cache = use_cache
-        self.cache_ttl = int(os.getenv('WOM_CACHE_TTL_SECONDS', cache_ttl))  # Default: 24 hours (86400 seconds)
+        
+        # Granular Cache TTL Configurations (Defaults: Group=5h, Player Min=3d, Player Max=7d, Batch=9%)
+        fallback_ttl = cache_ttl if cache_ttl is not None else 18000
+        self.group_ttl = int(os.getenv('WOM_GROUP_CACHE_TTL_SECONDS', os.getenv('WOM_CACHE_TTL_SECONDS', fallback_ttl)))
+        self.player_min_ttl = int(os.getenv('WOM_PLAYER_MIN_CACHE_TTL_SECONDS', 259200))
+        self.player_max_ttl = int(os.getenv('WOM_PLAYER_MAX_CACHE_TTL_SECONDS', 604800))
+        self.player_batch_percent = float(os.getenv('WOM_PLAYER_BATCH_PERCENT', 0.09))
+        self.cache_ttl = self.group_ttl
 
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
@@ -34,6 +41,12 @@ class WomClient:
         if os.path.exists(self.cache_file):
             os.remove(self.cache_file)
         logger.info("WOM Cache has been forcibly cleared.")
+
+    def get_cache_timestamp(self, cache_key):
+        """Returns the unix timestamp of cached key, or 0 if missing/uncached."""
+        if cache_key in self.cache:
+            return self.cache[cache_key].get('timestamp', 0)
+        return 0
 
     def _load_cache(self):
         if self.use_cache and os.path.exists(self.cache_file):
@@ -52,12 +65,13 @@ class WomClient:
             except Exception as e:
                 logger.error(f"Failed to save cache: {e}")
 
-    def get(self, endpoint, cache_key=None, force_refresh=False):
+    def get(self, endpoint, cache_key=None, force_refresh=False, ttl=None):
+        effective_ttl = ttl if ttl is not None else self.group_ttl
         if cache_key and self.use_cache and not force_refresh:
             if cache_key in self.cache:
                 cached = self.cache[cache_key]
                 # Only return cache if it has not expired
-                if time.time() - cached.get('timestamp', 0) < self.cache_ttl:
+                if time.time() - cached.get('timestamp', 0) < effective_ttl:
                     logger.info(f"WOM Cache Hit: '{cache_key}'")
                     return cached['data']
 
