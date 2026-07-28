@@ -417,6 +417,9 @@ class GeneralRankMismatchAudit(BaseAudit):
         rsns_list, game_ranks_list = self.get_target_clan_accounts(member, target_clan_name)
         clean_ranks = [r for r in game_ranks_list if r and r != 'Unknown']
         
+        ignored_event_ranks_env = os.getenv('IGNORED_EVENT_RANKS', '')
+        ignored_event_ranks = {r.strip().lower() for r in ignored_event_ranks_env.split(',') if r.strip()}
+        
         user_roles = [r.strip() for r in str(member.get('Discord Ranks', '')).replace("'", "").split(',') if r.strip()]
         managed_user_roles = [r for r in user_roles if r in managed_role_ids]
         
@@ -443,16 +446,21 @@ class GeneralRankMismatchAudit(BaseAudit):
             ig_issues = []
             main_rank = rule['main_rank']
             allowed_all = ([main_rank] if main_rank else []) + rule['alt_ranks']
+            allowed_all_lower = {r.lower() for r in allowed_all}
             
-            if main_rank and main_rank not in clean_ranks:
+            has_ignored_event_rank = any(r.lower() in ignored_event_ranks for r in clean_ranks)
+            
+            if main_rank and main_rank not in clean_ranks and not has_ignored_event_rank:
                 ig_issues.append(f"Missing Main Rank {self.fmt_rank(main_rank)}")
                 
             unauth_alts = []
             for i in range(max(len(rsns_list), len(game_ranks_list))):
                 rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
                 rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
-                if rank != 'Unknown' and rank not in allowed_all:
-                    unauth_alts.append({'rsn': rsn, 'rank': rank})
+                if rank != 'Unknown':
+                    rank_lower = rank.lower()
+                    if rank_lower not in allowed_all_lower and rank_lower not in ignored_event_ranks:
+                        unauth_alts.append({'rsn': rsn, 'rank': rank})
                     
             if unauth_alts: ig_issues.append("Incorrect alt ranks")
             
@@ -486,7 +494,8 @@ class GeneralRankMismatchAudit(BaseAudit):
                 else:
                     is_mismatch = True; report_type = "general"
             else:
-                if managed_user_roles or clean_ranks:
+                unignored_clean_ranks = [r for r in clean_ranks if r.lower() not in ignored_event_ranks]
+                if managed_user_roles or unignored_clean_ranks:
                     is_mismatch = True; report_type = "general"
             
         if is_mismatch:
