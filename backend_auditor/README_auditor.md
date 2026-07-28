@@ -14,7 +14,7 @@ This folder contains the files for the Python script, "The Auditor," which acts 
 - `wom_client.py`: Handles Wise Old Man API requests, rate limits, and local caching in the `data/` directory.
 - `discord_sync.py`: Fetches roles and members from Discord, discovering new members and updating volatile Discord data.
 - `wom_sync.py`: Uses `wom_client.py` to fetch accounts, updating RSNs, game ranks, and clan statuses.
-- `sqlite_manager.py`: Local database manager for tracking raw JSON snapshots and a normalized history of player name changes.
+- `sqlite_manager.py`: Local database manager for tracking raw JSON snapshots, a normalized history of player name changes, and active issue duration history (`issue_tracker`).
 - `audit_logic.py`: An extensible, Object-Oriented rules engine (`BaseAudit`) that cross-references synced data to flag discrepancies, manages `System Flags`, and formats Discord webhook reports.
 - `dashboard_exporter.py`: Generates a complete JSON roster export (including IDs, flags, and name-change history) for the ETL Dashboard. Uses atomic writes to prevent database locking.
 - `CLI Tools`: Several setup scripts (e.g., `account_linker.py`, `rank_matcher.py`, `audit_resolver.py`) designed to help administrators rapidly sort untracked data.

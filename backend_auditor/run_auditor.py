@@ -9,6 +9,7 @@ from loguru import logger
 from db_manager import DBManager
 from webhook_manager import WebhookManager
 from wom_client import WomClient
+from sqlite_manager import SQLiteManager
 
 import discord_sync
 import audit_logic
@@ -82,6 +83,7 @@ def release_lock():
 def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
     logger.info("Initializing Orchestrator...")
     db = DBManager(SPREADSHEET_ID)
+    sqlite_mgr = SQLiteManager(SHARED_DATA_DIR / "databases" / "history.db")
     
     # Execute Daily Backup Policy
     retention = os.getenv('BACKUP_RETENTION_DAYS', 30)
@@ -116,7 +118,8 @@ def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
             'webhook': webhook,
             'banned_members': banned_members,
             'untracked_members': untracked_members,
-            'failed_wom_updates': failed_wom_updates
+            'failed_wom_updates': failed_wom_updates,
+            'sqlite_mgr': sqlite_mgr
         }
         
         audit_sections = audit_logic.audit_roster(

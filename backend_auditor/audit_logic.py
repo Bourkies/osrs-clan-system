@@ -77,13 +77,23 @@ class BaseAudit:
                 
         return target_rsns, target_ranks
 
-    def build_member_header(self, member, context, rsn_displays=None):
+    def get_duration_tag(self, context, entity_type, entity_id, issue_title=None):
+        title = issue_title or self.title
+        if not title: return ""
+        durations = context.get('active_issue_durations', {})
+        key = (entity_type, str(entity_id), title)
+        if key in durations:
+            return f" {durations[key]['formatted_tag']}"
+        return " *(NEW)*"
+
+    def build_member_header(self, member, context, rsn_displays=None, issue_title=None):
         """Generates a standardized header for member audits."""
         d_name = str(member.get('Discord Name', '')).strip()
         d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
         discord_name = d_name if d_name else (d_id if d_id else "Unknown")
         
-        discord_name_display = self.fmt_name(discord_name)
+        tag = self.get_duration_tag(context, 'member', d_id, issue_title=issue_title)
+        discord_name_display = self.fmt_name(discord_name) + tag
         if SystemFlag.NOT_IN_DISCORD.value in context.get('current_flags', []):
             discord_name_display += " *(Not in Discord)*"
             
@@ -166,7 +176,14 @@ class GlobalBannedAudit(BaseAudit):
 
     def execute(self, context, member=None):
         banned_members = context.get('banned_members', [])
-        lines = [f"• {self.fmt_name(m['rsn'])} (WOM ID: {self.fmt_id(m['wom_id'])})" for m in banned_members]
+        lines = []
+        collected = context.get('collected_active_issues')
+        for m in banned_members:
+            w_id = str(m['wom_id'])
+            if collected is not None:
+                collected.add(('wom_account', w_id, self.title))
+            tag = self.get_duration_tag(context, 'wom_account', w_id)
+            lines.append(f"• {self.fmt_name(m['rsn'])}{tag} (WOM ID: {self.fmt_id(w_id)})")
         return {'report_lines': lines}
 
 
@@ -177,7 +194,14 @@ class GlobalUntrackedAudit(BaseAudit):
 
     def execute(self, context, member=None):
         untracked_members = context.get('untracked_members', [])
-        lines = [f"• {self.fmt_name(m['rsn'])} (WOM ID: {self.fmt_id(m['wom_id'])})" for m in untracked_members]
+        lines = []
+        collected = context.get('collected_active_issues')
+        for m in untracked_members:
+            w_id = str(m['wom_id'])
+            if collected is not None:
+                collected.add(('wom_account', w_id, self.title))
+            tag = self.get_duration_tag(context, 'wom_account', w_id)
+            lines.append(f"• {self.fmt_name(m['rsn'])}{tag} (WOM ID: {self.fmt_id(w_id)})")
         return {'report_lines': lines}
 
 class GlobalWomUpdateFailedAudit(BaseAudit):
@@ -198,12 +222,17 @@ class GlobalWomUpdateFailedAudit(BaseAudit):
                 wom_to_member[w] = m
                 
         lines = []
+        collected = context.get('collected_active_issues')
         for wid, data in failed_updates.items():
             rsn = data['rsn']
             last_changed = data.get('last_changed')
             date_str = last_changed[:10] if last_changed else "Unknown"
+            w_id = str(wid)
+            if collected is not None:
+                collected.add(('wom_account', w_id, self.title))
+            tag = self.get_duration_tag(context, 'wom_account', w_id)
             
-            matched_member = wom_to_member.get(str(wid))
+            matched_member = wom_to_member.get(w_id)
             if matched_member:
                 d_name = str(matched_member.get('Discord Name', '')).strip()
                 d_id = str(matched_member.get('Discord ID', '')).replace("'", "").strip()
@@ -213,9 +242,9 @@ class GlobalWomUpdateFailedAudit(BaseAudit):
                 if SystemFlag.NOT_IN_DISCORD.value in str(matched_member.get('System Flags', '')):
                     discord_name_display += " (Not in Discord)"
                     
-                lines.append(f"• {discord_name_display} - RSNs: {rsn} ({date_str})")
+                lines.append(f"• {discord_name_display}{tag} - RSNs: {rsn} ({date_str})")
             else:
-                lines.append(f"• Unlinked Account - RSNs: {rsn} ({date_str})")
+                lines.append(f"• Unlinked Account{tag} - RSNs: {rsn} ({date_str})")
                 
         return {'report_lines': lines}
 
@@ -259,13 +288,13 @@ class MemberNotInClanAudit(BaseAudit):
                         else:
                             account_displays.append(self.fmt_name(rsn))
                             
-                    # report_line = self.build_member_header(member, context, account_displays)
                     d_name = str(member.get('Discord Name', '')).strip()
                     d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
                     discord_name = d_name if d_name else (d_id if d_id else "Unknown")
                     formatted_rsns = ", ".join(account_displays) if account_displays else "Unknown"
                     
-                    discord_name_display = self.fmt_name(discord_name)
+                    tag = self.get_duration_tag(context, 'member', d_id)
+                    discord_name_display = self.fmt_name(discord_name) + tag
                     if SystemFlag.NOT_IN_DISCORD.value in context.get('current_flags', []):
                         discord_name_display += " *(Not in Discord)*"
                         
@@ -767,6 +796,13 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     all_members = db_manager.get_all_records('Database')
     batch_updates = []
     
+    sqlite_mgr = context.get('sqlite_mgr')
+    if sqlite_mgr:
+        context['active_issue_durations'] = sqlite_mgr.get_active_issues()
+    else:
+        context['active_issue_durations'] = {}
+    context['collected_active_issues'] = set()
+
     # Enrich the context with parsed rules and derived state
     context['managed_role_ids'] = set()
     context['all_req_roles'] = set()
@@ -875,6 +911,9 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
 
             if rep_line and rep_title and not is_suppressed and audit.enable_webhook:
                 report_data[rep_title]['lines'].append(rep_line)
+                
+            if (rep_line or flag_add) and rep_title:
+                context['collected_active_issues'].add(('member', discord_id, rep_title))
             
             # Handle Flag Removals
             if flag_rm:
@@ -904,6 +943,9 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     if batch_updates:
         db_manager.batch_update_by_id('Database', 'Discord ID', batch_updates)
         logger.success(f"Executed {len(batch_updates)} flag updates to the database.")
+
+    if sqlite_mgr and 'collected_active_issues' in context:
+        sqlite_mgr.sync_active_issues(context['collected_active_issues'])
         
     # Flatten into webhook_manager section format
     report_sections = []

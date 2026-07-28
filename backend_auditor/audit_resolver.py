@@ -4,7 +4,8 @@ import sys
 from dotenv import load_dotenv
 from db_manager import DBManager
 import run_auditor as orchestrator
-from constants import SystemFlag, SHARED_SECRETS_DIR
+from constants import SystemFlag, SHARED_SECRETS_DIR, SHARED_DATA_DIR
+from sqlite_manager import SQLiteManager
 
 # --- ANSI COLORS ---
 RESET = "\033[0m"
@@ -35,7 +36,7 @@ def modify_flags(current_str, add_flags=None, remove_flags=None):
                 flags.remove(f)
     return ", ".join(flags) if flags else ""
 
-def print_member_details(member, role_map, managed_roles):
+def print_member_details(member, role_map, managed_roles, active_issues=None):
     d_name = str(member.get('Discord Name', '')).strip()
     d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
     notes = str(member.get('User Notes', '')).strip()
@@ -43,6 +44,12 @@ def print_member_details(member, role_map, managed_roles):
     sys_flags = str(member.get('System Flags', '')).strip() or "None"
     admin_flags = str(member.get('Admin Flags', '')).strip() or "None"
     
+    duration_str = ""
+    if active_issues:
+        matched = [info['formatted_tag'] for k, info in active_issues.items() if k[0] == 'member' and str(k[1]) == d_id]
+        if matched:
+            duration_str = f" {matched[0]}"
+            
     discord_ranks_raw = [r.strip().replace("'", "") for r in str(member.get('Discord Ranks', '')).split(',') if r.strip()]
     relevant_d_ranks = [r for r in discord_ranks_raw if r in managed_roles]
     readable_roles = [role_map.get(r, f"Unknown ({r})") for r in relevant_d_ranks]
@@ -54,7 +61,7 @@ def print_member_details(member, role_map, managed_roles):
     ranks_list = [rk.strip() for rk in str(member.get('Game Ranks', '')).split(',') if rk.strip()]
     
     print(f"\n--------------------------------------------------")
-    print(f"👤 Member: {GREEN}{d_name}{RESET} {DARK_GRAY}[Discord ID: {d_id}]{RESET}")
+    print(f"👤 Member: {GREEN}{d_name}{RESET}{MAGENTA}{duration_str}{RESET} {DARK_GRAY}[Discord ID: {d_id}]{RESET}")
     if notes:
         print(f"   {DARK_GRAY}↳ Notes:{RESET} {notes}")
     print(f"   {DARK_GRAY}↳ Sheet Rank:{RESET} {YELLOW}{sheet_rank}{RESET} {DARK_GRAY}| Discord Roles:{RESET} {roles_disp}")
@@ -112,6 +119,9 @@ def main():
 
     print("Loading current Database...")
     db_records = db.get_all_records('Database')
+    
+    sqlite_mgr = SQLiteManager(SHARED_DATA_DIR / "databases" / "history.db")
+    active_issues = sqlite_mgr.get_active_issues()
 
     categories = {
         1: {
@@ -287,7 +297,7 @@ def main():
             print(f"{DARK_GRAY}{cat['description']}{RESET}")
             
             for idx, member in enumerate(members_list, 1):
-                print_member_details(member, role_map, managed_roles)
+                print_member_details(member, role_map, managed_roles, active_issues)
                 
                 # Check dynamic actions for this member
                 member_actions = cat['actions'].copy()
