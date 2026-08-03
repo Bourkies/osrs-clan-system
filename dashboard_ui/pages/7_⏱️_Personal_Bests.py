@@ -400,25 +400,38 @@ else:
             
     with feed_r_col:
         st.subheader("🏆 Newest Clan Records")
-        df_pbs_recent = df_pbs.dropna(subset=['Date']).copy()
-        if not df_pbs_recent.empty:
-            df_pbs_recent = df_pbs_recent[df_pbs_recent['Date'] != ""]
-            df_pbs_recent['Timestamp'] = pd.to_datetime(df_pbs_recent['Date'], utc=True, errors='coerce')
-            df_pbs_recent = df_pbs_recent.dropna(subset=['Timestamp'])
-            df_pbs_recent.sort_values(by='Timestamp', ascending=False, inplace=True)
+        if not df_pbs.empty:
+            df_pbs_recent = df_pbs.copy()
+            if 'Timestamp' in df_pbs_recent.columns:
+                df_pbs_recent['Timestamp_DT'] = pd.to_datetime(df_pbs_recent['Timestamp'], utc=True, errors='coerce')
+            else:
+                df_pbs_recent['Timestamp_DT'] = pd.NaT
+
+            # Fallback to 'Date' if 'Timestamp' is missing or unparseable
+            fallback_mask = df_pbs_recent['Timestamp_DT'].isna() & df_pbs_recent['Date'].notna() & (df_pbs_recent['Date'] != "")
+            if fallback_mask.any():
+                df_pbs_recent.loc[fallback_mask, 'Timestamp_DT'] = pd.to_datetime(df_pbs_recent.loc[fallback_mask, 'Date'], utc=True, errors='coerce')
+
+            df_pbs_recent = df_pbs_recent.dropna(subset=['Timestamp_DT'])
+            df_pbs_recent = df_pbs_recent[df_pbs_recent['Timestamp_DT'] > pd.Timestamp.min.replace(tzinfo=timezone.utc)]
+            df_pbs_recent.sort_values(by='Timestamp_DT', ascending=False, inplace=True)
             
-            Streamlit_utils.display_event_feed(
-                df_pbs_recent.head(50),
-                run_time=run_time,
-                player_col='Holder',
-                item_col='Task',
-                val_col='Time',
-                date_col='Timestamp',
-                limit=50,
-                height="400px"
-            )
+            if not df_pbs_recent.empty:
+                Streamlit_utils.display_event_feed(
+                    df_pbs_recent.head(50),
+                    run_time=run_time,
+                    player_col='Holder',
+                    item_col='Task',
+                    val_col='Time',
+                    date_col='Timestamp_DT',
+                    limit=50,
+                    height="400px"
+                )
+            else:
+                st.info("No recent clan records available.")
         else:
             st.info("No recent clan records available.")
+
 
     st.markdown("---")
     

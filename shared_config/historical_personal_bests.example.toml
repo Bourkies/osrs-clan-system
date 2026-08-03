@@ -197,7 +197,9 @@ records = [
     { name = "Hespori", time = "0:00", holder = "", discord_emoji = "" },
     { name = "Hueycoatl", time = "0:00", holder = "", discord_emoji = "" },
     { name = "Leviathan", time = "0:00", holder = "", discord_emoji = "" },
+    { name = "Mad Angel", time = "0:00", holder = "", discord_emoji = "<:Mad_Angel:1533715117802393720>" },
     { name = "Mimic", time = "0:00", holder = "", discord_emoji = "" },
+
     { name = "Nex", time = "0:00", holder = "", discord_emoji = "" },
 ]
 
@@ -254,3 +256,11 @@ records = [
     { name = "Gwenith Glide Shark", time = "0:00", holder = "", discord_emoji = "" },
     { name = "Gwenith Glide Marlin", time = "0:00", holder = "", discord_emoji = "" },
 ]
+
+[[groups]]
+title = "🏆 Other Records 🏆"
+Image = "images/Collection_log_detail.png"
+records = [
+    { name = "Collection Log", time = "0", holder = "", discord_emoji = "📜", metric = "score", label = "Logs", display_name = "Collection Log" },
+]
+

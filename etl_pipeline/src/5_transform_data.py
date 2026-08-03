@@ -694,9 +694,20 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
                     'manual_date': manual_date
                 })
 
-    source_type = pb_config.get('broadcast_type')
-    df_pbs_source = df_broadcasts[df_broadcasts['Broadcast_Type'] == source_type].copy()
+    source_types = pb_config.get('broadcast_type', ['Personal Best', 'Collection Log'])
+    if isinstance(source_types, str):
+        source_types = [source_types]
+    if 'Collection Log' not in source_types:
+        source_types.append('Collection Log')
+
+    df_pbs_source = df_broadcasts[df_broadcasts['Broadcast_Type'].isin(source_types)].copy()
     
+    if not df_pbs_source.empty and 'Collection_Log_Progress' in df_pbs_source.columns:
+        clog_mask = df_pbs_source['Broadcast_Type'] == 'Collection Log'
+        if clog_mask.any():
+            df_pbs_source.loc[clog_mask, 'Task_Name'] = 'Collection Log'
+            df_pbs_source.loc[clog_mask, 'PB_Time'] = df_pbs_source.loc[clog_mask, 'Collection_Log_Progress']
+
     if drop_leavers and 'Is_Retained' in df_pbs_source.columns:
         df_pbs_source = df_pbs_source[df_pbs_source['Is_Retained']]
         
@@ -873,10 +884,15 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
         
         # A date is only set if this definitive record is from the DB (not historical).
         record_date = None
+        record_iso_timestamp = None
         if not definitive_record['is_historical']:
             record_date = definitive_record['Timestamp'].strftime('%Y-%m-%d')
+            record_iso_timestamp = definitive_record['Timestamp'].isoformat()
         elif pd.notna(definitive_record.get('manual_date')) and definitive_record.get('manual_date'):
             record_date = str(definitive_record.get('manual_date'))
+            ts = pd.to_datetime(definitive_record.get('manual_date'), errors='coerce', utc=True)
+            if pd.notna(ts):
+                record_iso_timestamp = ts.isoformat()
 
         final_records[task_name] = {
             'Task': task_name,
@@ -884,6 +900,7 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
             'Holder': ', '.join(unique_holders),
             'Time': formatted_val,
             'Date': record_date,
+            'Timestamp': record_iso_timestamp,
             'Group': task_to_group_map.get(task_name, other_group_name),
             'Label': task_config_map.get(task_name, {}).get('label', 'Time')
         }
@@ -903,15 +920,15 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
                 'Holder': '',
                 'Time': '0' if metric == 'score' else '0:00',
                 'Date': None,
+                'Timestamp': None,
                 'Group': task_to_group_map.get(task, other_group_name),
                 'Label': task_config_map.get(task, {}).get('label', 'Time')
             })
         df_missing = pd.DataFrame(missing_records)
         df_summary = pd.concat([df_summary, df_missing], ignore_index=True)
-        logger.info(f"--> Added back {len(missing_tasks)} tasks that had no valid record holders after blacklisting.")
-
     logger.info(f"--> Generated personal bests report with {len(df_summary)} unique items.")
     return df_summary
+
 
 
 def generate_recent_achievements_report(df_broadcasts, config, run_warnings, global_drop_leavers=False):
