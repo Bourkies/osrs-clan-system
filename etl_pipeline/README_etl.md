@@ -47,7 +47,7 @@ docker-compose up -d --build
 
 ## Pipeline Sequence
 When `run_etl.py` is executed, it runs scripts in the following order:
-1. `1_ingest_webhooks.py`: Ingests the raw chat logs from your local database.
+1. `1_fetch_data.py`: Fetches and ingests the raw chat logs from Discord into your local database.
 2. `2_fetch_item_prices.py`: Connects to the Wiki API to get historic valuations.
 3. `3_parse_engine.py`: Uses Regex configs to categorize messages (Chat, Drops, Level Ups).
 4. `4_enrich_roster.py`: Reads the Auditor's `roster_export.json` to link in-game names to static Discord IDs and handles grace periods for members who leave.

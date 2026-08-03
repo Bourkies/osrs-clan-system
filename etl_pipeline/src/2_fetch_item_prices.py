@@ -133,7 +133,7 @@ def main():
             raise ValueError("No items found in [item_value_overrides] section of config.toml. Exiting.")
 
         # Define the database for item prices
-        db_uri = f"sqlite:///{DATA_DIR / 'item_prices.db'}"
+        db_uri = config.get('databases', {}).get('price_db_uri', f"sqlite:///{DATA_DIR / 'item_prices.db'}")
         engine = get_db_engine(db_uri)
         if not engine:
             raise ValueError("Failed to create database engine.")

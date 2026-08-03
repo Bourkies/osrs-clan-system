@@ -993,7 +993,11 @@ def main():
 
     parsed_db_uri = config['databases']['parsed_db_uri']
     if use_enriched_db:
-        if parsed_db_uri.startswith('sqlite'):
+        enriched_config_uri = config.get('databases', {}).get('enriched_db_uri')
+        if enriched_config_uri:
+            parsed_db_uri = enriched_config_uri
+            logger.info(f"Config set to use enriched DB. Reading from configured enriched_db_uri: {parsed_db_uri}")
+        elif parsed_db_uri.startswith('sqlite'):
             parsed_db_path_str = parsed_db_uri.split('///')[1]
             parsed_db_path = DATA_DIR / Path(parsed_db_path_str).name
             enriched_db_path = parsed_db_path.with_name('enriched_data.db')

@@ -5,7 +5,7 @@ from datetime import timedelta
 from loguru import logger
 from sqlalchemy import text
 
-from shared_utils import load_config, get_db_engine, BASE_DIR, apply_manual_name_mappings, finish_script
+from shared_utils import load_config, get_db_engine, BASE_DIR, DATA_DIR, apply_manual_name_mappings, finish_script
 from loguru_setup import loguru_setup
 
 SCRIPT_NAME = "4_enrich_roster"
@@ -269,7 +269,7 @@ def main():
         logger.info(f"Loaded {len(roster_dict)} members from JSON.")
         
         parsed_db_uri = config['databases']['parsed_db_uri']
-        enriched_db_uri = config['databases'].get('enriched_db_uri', 'sqlite:///shared_data/databases/enriched_data.db')
+        enriched_db_uri = config.get('databases', {}).get('enriched_db_uri', f"sqlite:///{DATA_DIR / 'enriched_data.db'}")
         
         parsed_engine = get_db_engine(parsed_db_uri)
         enriched_engine = get_db_engine(enriched_db_uri)

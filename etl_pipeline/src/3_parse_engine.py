@@ -294,13 +294,16 @@ def save_df_with_ignore(df: pd.DataFrame, table_name: str, engine, run_warnings:
                     row_dict = row.to_dict()
                     cols = ', '.join(f'"{c}"' for c in row_dict.keys())
                     placeholders = ', '.join(f':{c}' for c in row_dict.keys())
-                    stmt = text(f'INSERT INTO "{table_name}" ({cols}) VALUES ({placeholders})')
+                    if engine.dialect.name == 'sqlite':
+                        stmt = text(f'INSERT OR IGNORE INTO "{table_name}" ({cols}) VALUES ({placeholders})')
+                    else:
+                        stmt = text(f'INSERT INTO "{table_name}" ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING')
                     
-                    connection.execute(stmt, row_dict)
-                    rows_added += 1
+                    result = connection.execute(stmt, row_dict)
+                    if result.rowcount > 0:
+                        rows_added += 1
                 except exc.IntegrityError:
-                    # This can happen if the row is a true duplicate (e.g. re-running the parser on old data)
-                    # The UNIQUE constraint (e.g., on raw_log_id or a composite) prevents it.
+                    # Fallback log trace if driver raises IntegrityError despite conflict clause
                     logger.trace(f"Ignoring duplicate entry for table {table_name}, raw_log_id: {row.get('raw_log_id')}")
                     continue
                 except Exception:
@@ -319,7 +322,7 @@ def main():
     parsed_engine = get_db_engine(config['databases']['parsed_db_uri'])
     
     # Create a separate engine for the item prices database
-    price_db_uri = f"sqlite:///{DATA_DIR / 'item_prices.db'}"
+    price_db_uri = config.get('databases', {}).get('price_db_uri', f"sqlite:///{DATA_DIR / 'item_prices.db'}")
     price_engine = get_db_engine(price_db_uri)
 
     summary = ""
