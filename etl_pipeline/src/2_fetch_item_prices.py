@@ -94,7 +94,7 @@ def get_wiki_timeseries(item_id: str, item_name: str, user_agent: str, run_warni
     
     return []
 
-def get_last_timestamp_for_item(engine, item_id: str) -> pd.Timestamp:
+def get_last_timestamp_for_item(engine, item_id: str) -> pd.Timestamp | None:
     """
     Finds the most recent timestamp for a given item ID in the database.
     Returns a timezone-aware pandas Timestamp or None if not found.
