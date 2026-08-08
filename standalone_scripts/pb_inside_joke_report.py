@@ -191,7 +191,8 @@ def main():
     for idx, row in df.iterrows():
         parsed = parse_pb_time(row["PB_Time"], TARGET_TIME_STR)
         if parsed:
-            player_name = row["Discord_Name"] if (pd.notna(row["Discord_Name"]) and row["Discord_Name"]) else row["Username"]
+            disc_val = row["Discord_Name"]
+            player_name = disc_val.strip() if isinstance(disc_val, str) and disc_val.strip() else str(row["Username"])
             parsed_records.append({
                 "raw_log_id": row["raw_log_id"],
                 "Timestamp": row["Timestamp"],
