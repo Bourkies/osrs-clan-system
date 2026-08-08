@@ -136,14 +136,7 @@ else:
             message = get_achievement_message(row, texts)
             
             event_time = row.get('Timestamp')
-            time_ago = "Unknown"
-            if pd.notna(event_time):
-                delta = now_utc - event_time
-                total_seconds = int(delta.total_seconds())
-                if total_seconds < 0: time_ago = "Just now"
-                elif total_seconds >= 86400: time_ago = f"{total_seconds // 86400}d ago"
-                elif total_seconds >= 3600: time_ago = f"{total_seconds // 3600}h ago"
-                else: time_ago = f"{max(1, total_seconds // 60)}m ago"
+            time_ago = Streamlit_utils.format_time_ago(event_time, now_utc=now_utc)
                 
             accent_color = color_map.get(broadcast_type, ui_theme.get("secondary_accent", "#A4E0DC"))
             

@@ -258,7 +258,7 @@ def load_table(table_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def get_last_updated_timestamp() -> datetime:
+def get_last_updated_timestamp() -> datetime | None:
     """Fetches the last ETL run timestamp from the metadata table."""
     df_meta = load_table('run_metadata')
     if not df_meta.empty and 'last_updated_utc' in df_meta.columns:
@@ -362,12 +362,12 @@ def display_leaderboard_podium(
         if format_count_as_gp:
             count_str = format_gp(count)
         else:
-            count_str = f"{int(count):,}" if pd.notna(count) else "0"
+            count_str = f"{int(count):,}" if (count is not None and pd.notna(count) is True) else "0"
             
         secondary_str = count_str
         if secondary_count_col and secondary_count_col in df.columns:
             sec_val = row[secondary_count_col]
-            secondary_str = f"{int(sec_val):,}" if pd.notna(sec_val) else "0"
+            secondary_str = f"{int(sec_val):,}" if (sec_val is not None and pd.notna(sec_val) is True) else "0"
             
         emoji = emojis[i] if i < len(emojis) else "🔹"
         font_size = font_sizes[i] if i < len(font_sizes) else font_sizes[-1]
@@ -454,7 +454,7 @@ def display_leaderboard_podium(
             if format_count_as_gp:
                 table_count_str = format_gp(count)
             else:
-                table_count_str = f"{int(count):,}" if pd.notna(count) else "0"
+                table_count_str = f"{int(count):,}" if (count is not None and pd.notna(count) is True) else "0"
             
             table_html += f'<tr><td class="rank-col">#{rank}</td><td class="player-col">{player_safe}</td><td class="count-col">{table_count_str}</td></tr>\n'
             
@@ -633,6 +633,32 @@ def get_chart_data_for_period(df_timeseries, selected_period_label, dashboard_co
     
     return pd.concat([zero_row, df_in_period[['Date', 'Value']]], ignore_index=True)
 
+def format_time_ago(ts: object, now_utc: datetime | None = None) -> str:
+    """Safely converts a timestamp (string, datetime, or Timestamp) to a relative time string (e.g. '5m ago')."""
+    if ts is None or pd.isna(ts) is True:
+        return "Unknown"
+        
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+        
+    try:
+        dt = pd.to_datetime(ts, utc=True, errors='coerce')
+        if pd.isna(dt):
+            return "Unknown"
+            
+        total_seconds = int((now_utc - dt).total_seconds())
+        if total_seconds < 0:
+            return "Just now"
+        elif total_seconds >= 86400:
+            return f"{total_seconds // 86400}d ago"
+        elif total_seconds >= 3600:
+            return f"{total_seconds // 3600}h ago"
+        else:
+            return f"{max(1, total_seconds // 60)}m ago"
+    except Exception:
+        return "Unknown"
+
+
 def display_event_feed(
     df: pd.DataFrame,
     run_time: datetime,
@@ -662,14 +688,7 @@ def display_event_feed(
             val_str = str(val_raw).replace('<', '&lt;').replace('>', '&gt;')
             
         event_time = row.get(date_col)
-        time_ago = "Unknown"
-        if pd.notna(event_time):
-            delta = now_utc - event_time
-            total_seconds = int(delta.total_seconds())
-            if total_seconds < 0: time_ago = "Just now"
-            elif total_seconds >= 86400: time_ago = f"{total_seconds // 86400}d ago"
-            elif total_seconds >= 3600: time_ago = f"{total_seconds // 3600}h ago"
-            else: time_ago = f"{max(1, total_seconds // 60)}m ago"
+        time_ago = format_time_ago(event_time, now_utc=now_utc)
             
         feed_html += (
             f'<div style="background: {UI_THEME["card_bg"]}; border: 1px solid {UI_THEME["primary_border"]}; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: {UI_THEME["shadow_sm"]};">'
@@ -725,7 +744,7 @@ def sidebar_time_filter(run_time: datetime, min_date: datetime = None) -> tuple[
     st.sidebar.markdown("---")
     return start_date, end_date
 
-def sidebar_summary_time_filter(dashboard_config: dict, key: str = "summary_time_period") -> tuple[str, str]:
+def sidebar_summary_time_filter(dashboard_config: dict, key: str = "summary_time_period") -> tuple[str | None, str]:
     """
     Displays a standardized time period selector in the sidebar using pills for pre-aggregated summary tables.
     Returns the selected period suffix (e.g., 'YTD', 'All_Time') and the display label.
