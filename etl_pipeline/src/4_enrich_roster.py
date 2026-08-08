@@ -40,43 +40,61 @@ def build_interval_map(roster_payload, buffer_hours, df_all_events):
         # Start by assuming they hold their current names until the end of time
         open_spans = {canonicalize_rsn(rsn): t_max for rsn in member.get("current_rsns", [])}
         
-        # Walk backwards through their name change history
-        history = sorted(member.get("name_history", []), key=lambda x: x["date"], reverse=True)
+        # Walk backwards through their name change history using multi-pass topological matching
+        history = sorted(member.get("name_history", []), key=lambda x: str(x.get("date", "")), reverse=True)
         
-        for event in history:
-            old_name = canonicalize_rsn(event["old_name"])
-            new_name = canonicalize_rsn(event["new_name"])
-            t_change = pd.to_datetime(event["date"], utc=True)
-            
-            # Close the interval for the new name (it started when the change happened)
-            if new_name in open_spans:
-                end_time = open_spans.pop(new_name)
-                if buffer_hours > 0:
-                    buffer = pd.Timedelta(hours=buffer_hours)
-                    window_start = t_change - buffer
-                    
-                    start_time = t_change
-                    if not df_all_events.empty:
-                        # Find first appearance of new_name in window
-                        mask = (df_all_events['Canon_Username'] == new_name) & \
-                               (df_all_events['Timestamp'] >= window_start) & \
-                               (df_all_events['Timestamp'] <= t_change)
-                        
-                        first_seen = df_all_events.loc[mask, 'Timestamp'].min()
-                        if pd.notna(first_seen):
-                            start_time = first_seen
-                else:
-                    start_time = t_change
+        remaining_events = list(history)
+        while remaining_events:
+            progress = False
+            for i in range(len(remaining_events) - 1, -1, -1):
+                event = remaining_events[i]
+                old_name = canonicalize_rsn(event.get("old_name", ""))
+                new_name = canonicalize_rsn(event.get("new_name", ""))
+                t_change = pd.to_datetime(event.get("date"), utc=True)
                 
+                if new_name in open_spans:
+                    end_time = open_spans.pop(new_name)
+                    if buffer_hours > 0:
+                        buffer = pd.Timedelta(hours=buffer_hours)
+                        window_start = t_change - buffer
+                        
+                        start_time = t_change
+                        if not df_all_events.empty:
+                            mask = (df_all_events['Canon_Username'] == new_name) & \
+                                   (df_all_events['Timestamp'] >= window_start) & \
+                                   (df_all_events['Timestamp'] <= t_change)
+                            
+                            first_seen = df_all_events.loc[mask, 'Timestamp'].min()
+                            if pd.notna(first_seen):
+                                start_time = first_seen
+                    else:
+                        start_time = t_change
+                    
+                    if new_name not in interval_map:
+                        interval_map[new_name] = []
+                    interval_map[new_name].append({
+                        'start': start_time, 'end': end_time,
+                        'discord_id': discord_id, 'discord_name': discord_name
+                    })
+                    open_spans[old_name] = start_time
+                    remaining_events.pop(i)
+                    progress = True
+            
+            if not progress:
+                # Fallback for disconnected history items to guarantee termination
+                event = remaining_events.pop(0)
+                old_name = canonicalize_rsn(event.get("old_name", ""))
+                new_name = canonicalize_rsn(event.get("new_name", ""))
+                t_change = pd.to_datetime(event.get("date"), utc=True)
+                start_time = t_change
+                end_time = open_spans.pop(new_name, t_max)
                 if new_name not in interval_map:
                     interval_map[new_name] = []
                 interval_map[new_name].append({
                     'start': start_time, 'end': end_time,
                     'discord_id': discord_id, 'discord_name': discord_name
                 })
-            
-            # Open an interval for the old name (Ends exactly when WOM syncs the new name)
-            open_spans[old_name] = start_time
+                open_spans[old_name] = start_time
             
         # Close any remaining open spans at the beginning of time
         for rsn, end_time in open_spans.items():
