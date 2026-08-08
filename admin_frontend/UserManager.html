@@ -33,7 +33,7 @@
           <h5 class="modal-title" id="edit-modal-title">Edit Member</h5>
           <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
           <div id="edit-status-message" class="mb-3 d-none"></div>
           
           <h5 class="border-bottom pb-2">Discord Information</h5>
@@ -152,6 +152,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let originalClanRank = '';
   let currentRankHistory = '';
   let initialLoadedData = null; // Used for concurrency check
+  let initialLoadedHash = null; // Used for optimistic lock
   let pendingFormData = null;   // Used if we hit a conflict
 
   function addAccountField(womId = '', note = '', rsn = '', clan = '', rank = '', historyHtml = '') {
@@ -284,17 +285,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (initialLoadedData) {
       google.script.run.withSuccessHandler(function(latestResult) {
-        if (latestResult && hasConflict(initialLoadedData, latestResult.user)) $('#conflict-modal').modal('show');
-        else executeSave(pendingFormData);
+        if (latestResult && hasConflict(initialLoadedData, latestResult.user)) {
+          hideLoader();
+          $('#conflict-modal').modal('show');
+        } else {
+          executeSave(pendingFormData, false);
+        }
       }).withFailureHandler(function(err) {
         hideLoader();
         if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) window.handleAuthError(err.message);
         else alert('Error checking user: ' + err.message);
       }).findUserByDiscordId(token, data['Discord ID']);
-    } else { executeSave(pendingFormData); }
+    } else { 
+      executeSave(pendingFormData, false); 
+    }
   });
 
-  document.getElementById('btn-conflict-overwrite').addEventListener('click', function() { $('#conflict-modal').modal('hide'); executeSave(pendingFormData); });
+  document.getElementById('btn-conflict-overwrite').addEventListener('click', function() { 
+    $('#conflict-modal').modal('hide'); 
+    executeSave(pendingFormData, true); 
+  });
+  
   document.getElementById('btn-conflict-reload').addEventListener('click', function() {
     $('#conflict-modal').modal('hide'); showLoader();
     const token = window.getSessionToken();
@@ -315,11 +326,12 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('edit-system-flags').value = 'Pending Sync...'; document.getElementById('edit-clan-rank-date').value = 'Pending Sync...';
       document.getElementById('edit-rank-history').value = 'Pending Sync...';
       document.getElementById('edit-clan-rank').value = ''; document.getElementById('edit-game-rank').value = 'Pending Sync...';
-      originalClanRank = ''; currentRankHistory = ''; initialLoadedData = null; 
+      originalClanRank = ''; currentRankHistory = ''; initialLoadedData = null; initialLoadedHash = null;
       populateAdminFlags([]);
     } else {
       const user = result.user;
       initialLoadedData = user;
+      initialLoadedHash = result.hash || '';
       statusMsg.classList.add('d-none');
       document.getElementById('edit-discord-id').value = user['Discord ID'] ? user['Discord ID'].toString().replace(/^'/, '') : '';
       document.getElementById('edit-discord-name').value = user['Discord Name'] || '';
@@ -405,14 +417,26 @@ document.addEventListener('DOMContentLoaded', function() {
            oldData['Account Notes'] !== freshData['Account Notes'] || oldData['Admin Flags'] !== freshData['Admin Flags'] || oldData['User Notes'] !== freshData['User Notes'];
   }
 
-  function executeSave(payload) {
+  function executeSave(payload, forceOverwrite) {
     const token = window.getSessionToken();
     if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); hideLoader(); return; }
+    
+    const hashToSend = forceOverwrite ? null : initialLoadedHash;
+
     google.script.run.withSuccessHandler(function(response) {
       const statusMsg = document.getElementById('edit-status-message');
       if (response.success) {
         statusMsg.textContent = 'Saved Successfully!'; statusMsg.className = 'alert alert-success mb-3'; statusMsg.classList.remove('d-none');
-        hideLoader(); setTimeout(() => { $('#edit-user-modal').modal('hide'); }, 1000); if (window.loadRosterTable) window.loadRosterTable();
+        hideLoader();
+        if (response.user && window.updateOrAddTableRow) {
+          window.updateOrAddTableRow(response.user);
+        } else if (window.loadRosterTable) {
+          window.loadRosterTable();
+        }
+        setTimeout(() => { $('#edit-user-modal').modal('hide'); }, 800);
+      } else if (response.conflict) {
+        hideLoader();
+        $('#conflict-modal').modal('show');
       } else {
         statusMsg.textContent = 'Error: ' + response.message; statusMsg.className = 'alert alert-danger mb-3'; statusMsg.classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
       }
@@ -421,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function() {
       else {
         document.getElementById('edit-status-message').textContent = 'Network Error: ' + err.message; document.getElementById('edit-status-message').className = 'alert alert-danger mb-3'; document.getElementById('edit-status-message').classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
       }
-    }).createOrUpdateUser(token, payload);
+    }).createOrUpdateUser(token, payload, hashToSend);
   }
 });
 </script>

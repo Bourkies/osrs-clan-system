@@ -277,11 +277,29 @@ function invalidateSession(sessionToken) {
 }
 
 /**
+ * Helper to get active Spreadsheet instance or open by ID.
+ */
+function getSpreadsheetInstance(optionalSs) {
+  return optionalSs || SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+/**
+ * Computes SHA-256 base64 hash of data object/array for optimistic locking.
+ */
+function computeDataHash(dataObj) {
+  if (!dataObj) return '';
+  const str = typeof dataObj === 'string' ? dataObj : JSON.stringify(dataObj);
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, str, Utilities.Charset.UTF_8);
+  return Utilities.base64Encode(digest);
+}
+
+/**
  * Fetches a single setting value from the System_Config tab.
  */
-function getSystemConfigValue(settingName) {
+function getSystemConfigValue(settingName, optionalSs) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SYSTEM_CONFIG_TAB_NAME);
+    const ss = getSpreadsheetInstance(optionalSs);
+    const sheet = ss.getSheetByName(SYSTEM_CONFIG_TAB_NAME);
     if (!sheet) return '';
     const data = sheet.getDataRange().getDisplayValues();
     if (data.length <= 1) return '';
@@ -303,16 +321,22 @@ function getSystemConfigValue(settingName) {
 }
 
 /**
- * Validates session and fetches initial application data payload.
+ * Validates session and fetches initial application data payload in a single optimized pass.
  */
 function getInitialPayload(sessionToken) {
   const session = verifySession(sessionToken);
+  const ss = getSpreadsheetInstance();
+  
+  const refData = getFullReferenceData(ss);
+  const users = getAllUsers(sessionToken, ss);
+
   return {
-    targetClanName: getTargetClanName(),
-    roleMap: getDiscordRolesMap(),
-    users: getAllUsers(sessionToken),
-    ranks: getClanRanks(),
-    referenceData: getFullReferenceData(),
+    targetClanName: getTargetClanName(ss),
+    roleMap: getDiscordRolesMap(ss),
+    users: users,
+    ranks: getClanRanksFromRefData(refData),
+    referenceData: refData,
+    ranksHash: computeDataHash(refData),
     currentUser: { id: session.discordId, name: session.discordName },
     loginUrl: getDiscordOAuthLoginUrl()
   };
@@ -331,16 +355,17 @@ function getPublicLoginInfo() {
 /**
  * Exposes target clan name.
  */
-function getTargetClanName() {
-  return getSystemConfigValue('Target Clan Name') || 'Unknown Clan';
+function getTargetClanName(optionalSs) {
+  return getSystemConfigValue('Target Clan Name', optionalSs) || 'Unknown Clan';
 }
 
 /**
  * Finds user row by Discord ID (Session Protected).
  */
-function findUserByDiscordId(sessionToken, discordId) {
+function findUserByDiscordId(sessionToken, discordId, optionalSs) {
   verifySession(sessionToken);
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
+  const ss = getSpreadsheetInstance(optionalSs);
+  const sheet = ss.getSheetByName(DATABASE_TAB_NAME);
   const data = sheet.getDataRange().getDisplayValues();
   const headers = data[0];
   const discordIdCol = headers.indexOf('Discord ID');
@@ -357,7 +382,11 @@ function findUserByDiscordId(sessionToken, discordId) {
       headers.forEach((header, index) => {
         user[header] = data[i][index];
       });
-      return { user: user, row: i + 1 };
+      return { 
+        user: user, 
+        row: i + 1,
+        hash: computeDataHash(user)
+      };
     }
   }
   return null;
@@ -366,8 +395,9 @@ function findUserByDiscordId(sessionToken, discordId) {
 /**
  * Fetches Discord roles map.
  */
-function getDiscordRolesMap() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DISCORD_ROLES_TAB_NAME);
+function getDiscordRolesMap(optionalSs) {
+  const ss = getSpreadsheetInstance(optionalSs);
+  const sheet = ss.getSheetByName(DISCORD_ROLES_TAB_NAME);
   if (!sheet) return {};
   const data = sheet.getDataRange().getDisplayValues();
   const roleMap = {};
@@ -384,9 +414,10 @@ function getDiscordRolesMap() {
 /**
  * Fetches all user records (Session Protected).
  */
-function getAllUsers(sessionToken) {
+function getAllUsers(sessionToken, optionalSs) {
   verifySession(sessionToken);
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
+  const ss = getSpreadsheetInstance(optionalSs);
+  const sheet = ss.getSheetByName(DATABASE_TAB_NAME);
   const data = sheet.getDataRange().getDisplayValues();
   if (data.length <= 1) return [];
 
@@ -404,31 +435,32 @@ function getAllUsers(sessionToken) {
 }
 
 /**
+ * Extracts clan ranks list from Reference Data.
+ */
+function getClanRanksFromRefData(refData) {
+  if (!refData || refData.length === 0) return [];
+  const ranks = [];
+  refData.forEach(item => {
+    const rank = item['Clan Rank'] ? item['Clan Rank'].toString().trim() : '';
+    if (rank && !ranks.includes(rank)) ranks.push(rank);
+  });
+  return ranks;
+}
+
+/**
  * Fetches clan ranks.
  */
-function getClanRanks() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getDisplayValues();
-  if (data.length <= 1) return [];
-
-  const headers = data[0];
-  const rankColIndex = headers.indexOf('Clan Rank');
-  if (rankColIndex === -1) return [];
-
-  const ranks = [];
-  for (let i = 1; i < data.length; i++) {
-    const rank = data[i][rankColIndex].toString().trim();
-    if (rank && !ranks.includes(rank)) ranks.push(rank);
-  }
-  return ranks;
+function getClanRanks(optionalSs) {
+  const refData = getFullReferenceData(optionalSs);
+  return getClanRanksFromRefData(refData);
 }
 
 /**
  * Fetches system schema.
  */
-function getSystemSchema() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SYSTEM_SCHEMA_TAB_NAME);
+function getSystemSchema(optionalSs) {
+  const ss = getSpreadsheetInstance(optionalSs);
+  const sheet = ss.getSheetByName(SYSTEM_SCHEMA_TAB_NAME);
   if (!sheet) return [];
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
@@ -465,9 +497,9 @@ function validateFormData(formData, schema) {
 }
 
 /**
- * Creates or updates user record (Session Protected).
+ * Creates or updates user record (Session Protected) with optional hash verification.
  */
-function createOrUpdateUser(sessionToken, formData) {
+function createOrUpdateUser(sessionToken, formData, expectedHash) {
   const session = verifySession(sessionToken);
   const lock = LockService.getScriptLock();
   try {
@@ -476,10 +508,22 @@ function createOrUpdateUser(sessionToken, formData) {
       return { success: false, message: 'Validation Error: Discord ID is missing from the payload.' };
     }
 
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
+    const ss = getSpreadsheetInstance();
+    const sheet = ss.getSheetByName(DATABASE_TAB_NAME);
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-    const existingUser = findUserByDiscordId(sessionToken, formData['Discord ID']);
+    const existingUser = findUserByDiscordId(sessionToken, formData['Discord ID'], ss);
+
+    // Optimistic Concurrency Check
+    if (existingUser && expectedHash && existingUser.hash !== expectedHash) {
+      return {
+        success: false,
+        conflict: true,
+        message: 'Data Conflict Detected: Another administrator has updated this profile since you opened it.',
+        latestUserResult: existingUser
+      };
+    }
+
     const volatileHeaders = ['Discord Name', 'RSNs', 'Account Clan', 'Game Ranks', 'Discord Ranks', 'Join Date', 'System Flags'];
 
     let proposedData = {};
@@ -494,7 +538,7 @@ function createOrUpdateUser(sessionToken, formData) {
       proposedData[header] = val;
     });
 
-    const schema = getSystemSchema();
+    const schema = getSystemSchema(ss);
     const validation = validateFormData(proposedData, schema);
 
     if (!validation.valid) {
@@ -517,11 +561,23 @@ function createOrUpdateUser(sessionToken, formData) {
         }
       });
       logToAudit('Web App', `Manual Update - ${dName} (${discordId}): Updated ${updates} fields.`, auditUserString);
-      return { success: true, message: `User ${discordId} updated successfully.` };
+      const updatedUserRes = findUserByDiscordId(sessionToken, discordId, ss);
+      return { 
+        success: true, 
+        message: `User ${discordId} updated successfully.`,
+        user: updatedUserRes ? updatedUserRes.user : proposedData,
+        hash: updatedUserRes ? updatedUserRes.hash : computeDataHash(proposedData)
+      };
     } else {
       sheet.appendRow(rowData);
       logToAudit('Web App', `Manual Create - Unknown (${discordId}): Added new member to database.`, auditUserString);
-      return { success: true, message: `User ${discordId} created successfully.` };
+      const updatedUserRes = findUserByDiscordId(sessionToken, discordId, ss);
+      return { 
+        success: true, 
+        message: `User ${discordId} created successfully.`,
+        user: updatedUserRes ? updatedUserRes.user : proposedData,
+        hash: updatedUserRes ? updatedUserRes.hash : computeDataHash(proposedData)
+      };
     }
   } catch (e) {
     logToAudit('Web App', `System Error - System (N/A): ${e.message}`, `${session.discordName} (${session.discordId})`);
@@ -534,8 +590,9 @@ function createOrUpdateUser(sessionToken, formData) {
 /**
  * Fetches full reference data.
  */
-function getFullReferenceData() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
+function getFullReferenceData(optionalSs) {
+  const ss = getSpreadsheetInstance(optionalSs);
+  const sheet = ss.getSheetByName(REFERENCE_DATA_TAB_NAME);
   if (!sheet) return [];
   const data = sheet.getDataRange().getDisplayValues();
   if (data.length <= 1) return [];
@@ -556,14 +613,30 @@ function getFullReferenceData() {
 }
 
 /**
- * Saves reference data (Session Protected).
+ * Saves reference data (Session Protected) with expected hash optimistic locking check.
  */
-function saveReferenceData(sessionToken, ranks) {
+function saveReferenceData(sessionToken, ranks, expectedHash) {
   const session = verifySession(sessionToken);
   const auditUserString = `${session.discordName} (${session.discordId})`;
+  const lock = LockService.getScriptLock();
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
+    lock.waitLock(15000);
+    const ss = getSpreadsheetInstance();
+
+    if (expectedHash) {
+      const currentRanks = getFullReferenceData(ss);
+      const currentHash = computeDataHash(currentRanks);
+      if (currentHash !== expectedHash) {
+        return {
+          success: false,
+          conflict: true,
+          message: 'Data Conflict: Clan Rank rules were updated by another administrator while you were editing.'
+        };
+      }
+    }
+
+    const sheet = ss.getSheetByName(REFERENCE_DATA_TAB_NAME);
     const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
 
@@ -585,16 +658,21 @@ function saveReferenceData(sessionToken, ranks) {
       sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     }
 
+    const newRefData = getFullReferenceData(ss);
+    const newHash = computeDataHash(newRefData);
+
     logToAudit('Web App', `System Action - Updated Clan Rank Mappings via Web UI.`, auditUserString);
-    return { success: true };
+    return { success: true, hash: newHash };
   } catch (e) {
     logToAudit('Web App', `System Error - Error saving ranks - ${e.message}`, auditUserString);
     return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
   }
 }
 
 /**
- * Queries Wise Old Man API (Session Protected).
+ * Queries Wise Old Man API (Session Protected) with exact match prioritization.
  */
 function searchWomPlayer(sessionToken, username) {
   verifySession(sessionToken);
@@ -604,38 +682,66 @@ function searchWomPlayer(sessionToken, username) {
       headers: { 'User-Agent': WOM_USER_AGENT }
     };
 
-    const searchUrl = `https://api.wiseoldman.net/v2/players/search?username=${encodeURIComponent(username)}&limit=1`;
-    const searchRes = UrlFetchApp.fetch(searchUrl, options);
+    let player = null;
+    let exactMatch = false;
 
-    if (searchRes.getResponseCode() === 200) {
-      const data = JSON.parse(searchRes.getContentText());
-      if (data && data.length > 0) {
-        const player = data[0];
-        const membershipsUrl = `https://api.wiseoldman.net/v2/players/${encodeURIComponent(player.username)}/groups`;
-        const membershipsRes = UrlFetchApp.fetch(membershipsUrl, options);
-        let clanString = 'Not in WOM Group';
-        let rankString = 'None';
+    // 1. Try exact player lookup endpoint first
+    const exactUrl = `https://api.wiseoldman.net/v2/players/username/${encodeURIComponent(username)}`;
+    const exactRes = UrlFetchApp.fetch(exactUrl, options);
 
-        if (membershipsRes.getResponseCode() === 200) {
-          const memberships = JSON.parse(membershipsRes.getContentText());
-          if (memberships && memberships.length > 0) {
-            clanString = memberships.map(m => m.group ? m.group.name : 'Unknown').join(', ');
-            rankString = memberships.map(m => m.role ? m.role : 'Unknown').join(', ');
+    if (exactRes.getResponseCode() === 200) {
+      player = JSON.parse(exactRes.getContentText());
+      exactMatch = true;
+    } else {
+      // 2. Fallback to search endpoint with limit=10
+      const searchUrl = `https://api.wiseoldman.net/v2/players/search?username=${encodeURIComponent(username)}&limit=10`;
+      const searchRes = UrlFetchApp.fetch(searchUrl, options);
+
+      if (searchRes.getResponseCode() === 200) {
+        const searchData = JSON.parse(searchRes.getContentText());
+        if (searchData && searchData.length > 0) {
+          const normQuery = username.toLowerCase().replace(/_/g, ' ').trim();
+          const found = searchData.find(p => {
+            const pUser = (p.username || '').toLowerCase().replace(/_/g, ' ').trim();
+            const pDisp = (p.displayName || '').toLowerCase().replace(/_/g, ' ').trim();
+            return pUser === normQuery || pDisp === normQuery;
+          });
+
+          if (found) {
+            player = found;
+            exactMatch = true;
+          } else {
+            player = searchData[0];
+            exactMatch = false;
           }
         }
-
-        return {
-          success: true,
-          womId: player.id,
-          displayName: player.displayName,
-          clan: clanString,
-          rank: rankString
-        };
-      } else {
-        return { success: false, message: 'Player not found on Wise Old Man.' };
       }
+    }
+
+    if (player) {
+      const membershipsUrl = `https://api.wiseoldman.net/v2/players/${encodeURIComponent(player.username)}/groups`;
+      const membershipsRes = UrlFetchApp.fetch(membershipsUrl, options);
+      let clanString = 'Not in WOM Group';
+      let rankString = 'None';
+
+      if (membershipsRes.getResponseCode() === 200) {
+        const memberships = JSON.parse(membershipsRes.getContentText());
+        if (memberships && memberships.length > 0) {
+          clanString = memberships.map(m => m.group ? m.group.name : 'Unknown').join(', ');
+          rankString = memberships.map(m => m.role ? m.role : 'Unknown').join(', ');
+        }
+      }
+
+      return {
+        success: true,
+        womId: player.id,
+        displayName: player.displayName,
+        clan: clanString,
+        rank: rankString,
+        exactMatch: exactMatch
+      };
     } else {
-      return { success: false, message: `WOM API Error: ${searchRes.getResponseCode()}` };
+      return { success: false, message: 'Player not found on Wise Old Man.' };
     }
   } catch (e) {
     return { success: false, message: e.message };

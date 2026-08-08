@@ -46,6 +46,19 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('wom-confirm-id').textContent = res.womId;
         document.getElementById('wom-confirm-clan').textContent = res.clan;
         document.getElementById('wom-confirm-rank').textContent = res.rank;
+
+        const matchBadge = document.getElementById('wom-match-badge');
+        if (matchBadge) {
+          if (res.exactMatch) {
+            matchBadge.className = 'badge badge-success mb-2 p-2 d-block';
+            matchBadge.textContent = '✓ Exact Player Match Found';
+          } else {
+            matchBadge.className = 'badge badge-warning mb-2 p-2 d-block text-dark';
+            matchBadge.textContent = '⚠️ Closest Search Result (No exact name match)';
+          }
+          matchBadge.classList.remove('d-none');
+        }
+
         $('#wom-confirm-modal').modal('show');
       } else {
         statusLabel.textContent = res.message;

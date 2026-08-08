@@ -4,6 +4,7 @@ let discordRoleMap = {};
 let targetClanName = '';
 let managedRoleIds = new Set();
 window.dataTable = null;
+window.currentRanksHash = '';
 
 function showLoader() { document.getElementById('global-loader').classList.remove('d-none'); }
 function hideLoader() { document.getElementById('global-loader').classList.add('d-none'); }
@@ -81,6 +82,7 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('[OSRS Admin UI] Payload received successfully:', payload);
       targetClanName = payload.targetClanName || 'Unknown Clan';
       discordRoleMap = payload.roleMap || {};
+      window.currentRanksHash = payload.ranksHash || '';
       buildManagedRoles(payload.referenceData || []);
       renderClanRanks(payload.ranks || []);
       loadRosterTable(payload.users || []);
@@ -320,6 +322,28 @@ document.addEventListener('DOMContentLoaded', function() {
       hideLoader();
   }
 
+  function updateOrAddTableRow(userData) {
+    if (!window.dataTable || !userData) return;
+    const targetId = (userData['Discord ID'] || '').toString().trim().replace(/^'/, '');
+    if (!targetId) return;
+
+    let foundRow = null;
+    window.dataTable.rows().every(function() {
+      const d = this.data();
+      const rowId = (d && d['Discord ID']) ? d['Discord ID'].toString().trim().replace(/^'/, '') : '';
+      if (rowId === targetId) {
+        foundRow = this;
+      }
+    });
+
+    if (foundRow) {
+      foundRow.data(userData).draw(false);
+    } else {
+      window.dataTable.row.add(userData).draw(false);
+    }
+    populateFlagDropdown(window.dataTable);
+  }
+
   function renderClanRanks(ranks) {
     const select = document.getElementById('edit-clan-rank');
     if (!select) return;
@@ -337,6 +361,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   window.loadClanRanks = loadClanRanks;
   window.loadRosterTable = loadRosterTable;
+  window.updateOrAddTableRow = updateOrAddTableRow;
   window.filterMainClanRanks = filterMainClanRanks;
   window.translateRoleIds = translateRoleIds;
 
@@ -353,6 +378,13 @@ document.addEventListener('DOMContentLoaded', function() {
       }).invalidateSession(token);
     });
   }
+
+  // Fix Bootstrap 4 nested modal scroll lock bug
+  $(document).on('hidden.bs.modal', '.modal', function () {
+    if ($('.modal.show').length > 0) {
+      $('body').addClass('modal-open');
+    }
+  });
 
   document.getElementById('btn-refresh-data').addEventListener('click', function() { loadRosterTable(); });
 });

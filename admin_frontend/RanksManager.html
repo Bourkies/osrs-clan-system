@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
           
           <label class="font-weight-bold">Discord Roles Bucket Matrix</label>
           <div class="row">
-            <div class="col-md-4">
+            <div class="col-12 col-lg-4 mb-3 mb-lg-0">
               <div class="bg-light p-2 border rounded h-100">
                 <label class="text-muted mb-1"><small>Available Roles</small></label>
                 <input type="text" class="form-control form-control-sm mb-2 role-search" placeholder="Search roles...">
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </select>
               </div>
             </div>
-            <div class="col-md-8">
+            <div class="col-12 col-lg-8">
               <div class="d-flex mb-2">
                 <div class="d-flex flex-column justify-content-center px-2">
                   <button type="button" class="btn btn-sm btn-primary mb-1 btn-add-req" title="Add Required">&gt;&gt;</button>
@@ -175,9 +175,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  let initialRanksHash = null;
+
   document.getElementById('btn-open-ranks-modal').addEventListener('click', function() {
     showLoader();
     google.script.run.withSuccessHandler(function(ranks) {
+      initialRanksHash = window.currentRanksHash || null;
       const container = document.getElementById('ranks-container');
       container.innerHTML = '';
       if (ranks && ranks.length > 0) {
@@ -202,10 +205,12 @@ document.addEventListener('DOMContentLoaded', function() {
       e.target.closest('.rank-card').querySelector('.rank-title-display').innerHTML = `<strong>${escapeHtml(e.target.value) || 'New Rank'}</strong>`;
     } else if (e.target.classList.contains('role-search')) {
       const term = e.target.value.toLowerCase();
-      const availableSelect = e.target.closest('.col-md-4').querySelector('.available-roles');
-      Array.from(availableSelect.options).forEach(opt => {
-        opt.hidden = !opt.textContent.toLowerCase().includes(term);
-      });
+      const availableSelect = e.target.closest('.col-md-4, .col-12').querySelector('.available-roles');
+      if (availableSelect) {
+        Array.from(availableSelect.options).forEach(opt => {
+          opt.hidden = !opt.textContent.toLowerCase().includes(term);
+        });
+      }
     }
   });
 
@@ -255,16 +260,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     google.script.run.withSuccessHandler(function(res) {
       if (res.success) {
+        if (res.hash) {
+          window.currentRanksHash = res.hash;
+          initialRanksHash = res.hash;
+        }
         msg.textContent = 'Saved successfully!'; msg.className = 'mr-3 text-success font-weight-bold';
         setTimeout(() => { $('#ranks-modal').modal('hide'); btn.disabled = false; msg.classList.add('d-none'); if(window.loadClanRanks) window.loadClanRanks(); }, 1000);
-      } else { msg.textContent = 'Error: ' + res.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false; }
+      } else if (res.conflict) {
+        msg.textContent = 'Conflict Detected!'; msg.className = 'mr-3 text-warning font-weight-bold'; btn.disabled = false;
+        alert(res.message + ' Please refresh data or re-open the modal before saving.');
+      } else { 
+        msg.textContent = 'Error: ' + res.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false; 
+      }
     }).withFailureHandler(function(err) {
       if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) {
         window.handleAuthError(err.message);
       } else {
         msg.textContent = 'Error: ' + err.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false;
       }
-    }).saveReferenceData(token, ranksToSave);
+    }).saveReferenceData(token, ranksToSave, initialRanksHash);
   });
 
 });
