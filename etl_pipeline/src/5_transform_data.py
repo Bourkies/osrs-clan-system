@@ -533,7 +533,10 @@ def generate_collection_log_report(df_broadcasts, config, periods, run_warnings,
 
     df_item_counts['Historical_Count'] = df_item_counts['Item_Name'].map(historical_counts).fillna(0)
 
-    df_item_counts['All_Time_Count'] = df_item_counts.get('All_Time_Count', 0).fillna(0) + df_item_counts['Historical_Count']
+    if 'All_Time_Count' in df_item_counts.columns:
+        df_item_counts['All_Time_Count'] = df_item_counts['All_Time_Count'].fillna(0) + df_item_counts['Historical_Count']
+    else:
+        df_item_counts['All_Time_Count'] = df_item_counts['Historical_Count']
     
     df_item_counts.drop(columns=['Historical_Count'], inplace=True)
     df_item_counts = df_item_counts.fillna(0).astype({col: int for col in df_item_counts.columns if '_Count' in col})
@@ -847,7 +850,7 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
         metric = task_config_map.get(task_name, {}).get('metric', 'time')
         
         if metric == 'score':
-            best_val = task_group_df['sort_value'].max()
+            best_val = float(task_group_df['sort_value'].max())
             best_time_df = task_group_df[task_group_df['sort_value'] == best_val].copy()
             if pd.isna(best_val) or best_val == float('-inf'):
                 formatted_val = "0"
