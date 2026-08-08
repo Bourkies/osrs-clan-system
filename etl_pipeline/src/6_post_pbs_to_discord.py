@@ -129,6 +129,7 @@ class PBPosterClient(discord.Client):
         self.has_failed = False
 
     async def on_ready(self):
+        assert self.user is not None
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
         logger.info('------')
 
@@ -310,12 +311,11 @@ class PBPosterClient(discord.Client):
                             header = "## **🏆 Newest Clan Records**\n"
                             recent_section = header + "\n".join(recent_lines)
                             
+                            current_desc = embed.description or ""
                             # If the misc section is empty, keep a placeholder so the "Newest" section 
                             # is clearly separated from the "Miscellaneous" title.
-                            if "No records to display in this category." in embed.description:
+                            if "No records to display in this category." in current_desc:
                                 current_desc = f"## **{group_title}**\n*No miscellaneous records to display.*"
-                            else:
-                                current_desc = embed.description
                             
                             new_desc = current_desc + separator + recent_section
                             
