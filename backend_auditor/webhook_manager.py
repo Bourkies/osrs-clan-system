@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import time
 import json
@@ -46,6 +47,37 @@ class WebhookManager:
         ids = [r.strip() for r in role_ids_str.replace("'", "").split(',') if r.strip()]
         names = [role_map.get(rid, f"Unknown ({rid})") for rid in ids]
         return ", ".join(names) if names else "None"
+
+    @staticmethod
+    def _escape_discord_markdown(text: str) -> str:
+        """
+        Escapes Discord markdown control syntax (spoilers ||, strikethroughs ~~, code blocks ```, 
+        links []()) and internal name formatting breakers (*, _, `) to prevent layout issues on Discord.
+        """
+        if not text:
+            return text
+
+        # 1. Escape spoiler tags ||
+        text = text.replace("||", r"\|\|")
+
+        # 2. Escape strikethrough tags ~~
+        text = text.replace("~~", r"\~\~")
+
+        # 3. Escape code block delimiters ```
+        text = text.replace("```", r"\`\`\`")
+
+        # 4. Escape markdown link brackets to prevent hyperlink injection [text](url)
+        text = text.replace("[", r"\[").replace("]", r"\]")
+
+        # 5. Escape internal asterisks, underscores, and backticks inside bold user names (**name**)
+        def _escape_name_contents(match: re.Match) -> str:
+            content = match.group(1)
+            content = content.replace("*", r"\*").replace("_", r"\_").replace("`", r"\`")
+            return f"**{content}**"
+
+        text = re.sub(r"\*\*(.*?)\*\*", _escape_name_contents, text)
+
+        return text
 
     def send_report(self, sections):
         if not self.webhook_url:
@@ -96,7 +128,8 @@ class WebhookManager:
             
             for item in display_items:
                 # We do not strip trailing whitespace here so that audit_logic can inject its own \n gaps
-                add_text(item + "\n")
+                escaped_item = self._escape_discord_markdown(item)
+                add_text(escaped_item + "\n")
             
             add_text("\n") # Ensure a clean gap before the next section header
 
@@ -110,7 +143,7 @@ class WebhookManager:
         # By chunking embeds at 1900 chars and sending 3 per request (5700 chars max), we guarantee delivery.
         for i in range(0, len(embeds), 3):
             embed_chunk = embeds[i:i+3]
-            res = requests.post(self.webhook_url, json={"embeds": embed_chunk})
+            res = requests.post(self.webhook_url, json={"embeds": embed_chunk, "allowed_mentions": {"parse": []}})
             if res.status_code >= 400:
                 logger.error(f"Failed to send Discord webhook chunk {i//3 + 1} ({res.status_code}): {res.text}")
             else:

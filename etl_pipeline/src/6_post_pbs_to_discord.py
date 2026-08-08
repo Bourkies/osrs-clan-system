@@ -253,7 +253,8 @@ class PBPosterClient(discord.Client):
                         if self.name_to_id and h in self.name_to_id:
                             mapped_holders.append(f"<@{self.name_to_id[h]}>")
                         else:
-                            mapped_holders.append(h)
+                            clean_h = h.replace('`', '')
+                            mapped_holders.append(f"`{clean_h}`")
 
                     embed_group_data['records'].append({
                         'name': display_name,

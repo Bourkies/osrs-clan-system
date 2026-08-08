@@ -146,7 +146,7 @@ def post_to_discord_webhook(webhook_url: str, message: str, color: int = None):
     }
 
     headers = {"Content-Type": "application/json"}
-    payload = json.dumps({"embeds": [embed]})
+    payload = json.dumps({"embeds": [embed], "allowed_mentions": {"parse": []}})
 
     try:
         response = requests.post(webhook_url, data=payload, headers=headers, timeout=10)
