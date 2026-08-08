@@ -4,26 +4,99 @@ let discordRoleMap = {};
 let targetClanName = '';
 let managedRoleIds = new Set();
 window.dataTable = null;
+
 function showLoader() { document.getElementById('global-loader').classList.remove('d-none'); }
 function hideLoader() { document.getElementById('global-loader').classList.add('d-none'); }
+
+window.getSessionToken = function() {
+  if (window.SERVER_SESSION_TOKEN && window.SERVER_SESSION_TOKEN !== '<?!= sessionToken ?>' && window.SERVER_SESSION_TOKEN.length > 5) {
+    localStorage.setItem('discord_admin_session_token', window.SERVER_SESSION_TOKEN);
+    // Clean up URL parameters to keep address bar clean
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    return window.SERVER_SESSION_TOKEN;
+  }
+  return localStorage.getItem('discord_admin_session_token') || '';
+};
+
+window.handleAuthError = function(errMessage) {
+  localStorage.removeItem('discord_admin_session_token');
+  window.SERVER_SESSION_TOKEN = '';
+  document.getElementById('app-container').classList.add('d-none');
+  document.getElementById('login-container').classList.remove('d-none');
+  
+  const alertBox = document.getElementById('login-alert');
+  if (alertBox) {
+    alertBox.textContent = errMessage || 'Session expired or unauthorized. Please log in again.';
+    alertBox.classList.remove('d-none');
+  }
+  fetchLoginUrl();
+  hideLoader();
+};
+
+function fetchLoginUrl() {
+  if (window.SERVER_LOGIN_URL) {
+    const loginBtn = document.getElementById('discord-login-btn');
+    if (loginBtn) loginBtn.href = window.SERVER_LOGIN_URL;
+  }
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    google.script.run.withSuccessHandler(function(info) {
+      if (info && info.loginUrl) {
+        const loginBtn = document.getElementById('discord-login-btn');
+        if (loginBtn) loginBtn.href = info.loginUrl;
+      }
+    }).getPublicLoginInfo();
+  }
+}
 
 document.addEventListener('DOMContentLoaded', function() {
 
   // --- Initialization ---
+  console.log('[OSRS Admin UI] DOMContentLoaded fired.');
+  console.log('[OSRS Admin UI] SERVER_SESSION_TOKEN:', window.SERVER_SESSION_TOKEN ? 'Present (length: ' + window.SERVER_SESSION_TOKEN.length + ')' : 'None');
+  console.log('[OSRS Admin UI] SERVER_LOGIN_URL:', window.SERVER_LOGIN_URL || 'None');
+  
   initializeApp();
 
   function initializeApp() {
+    const token = window.getSessionToken();
+    console.log('[OSRS Admin UI] Resolved Active Session Token:', token ? token.substring(0, 8) + '...' : 'None');
+
+    if (!token) {
+      console.log('[OSRS Admin UI] Unauthenticated state: Displaying Login View.');
+      document.getElementById('app-container').classList.add('d-none');
+      document.getElementById('login-container').classList.remove('d-none');
+      fetchLoginUrl();
+      hideLoader();
+      return;
+    }
+
     showLoader();
+    console.log('[OSRS Admin UI] Authenticated state: Fetching Initial Payload from server...');
+    document.getElementById('login-container').classList.add('d-none');
+    document.getElementById('app-container').classList.remove('d-none');
+
     google.script.run.withSuccessHandler(function(payload) {
+      console.log('[OSRS Admin UI] Payload received successfully:', payload);
       targetClanName = payload.targetClanName || 'Unknown Clan';
       discordRoleMap = payload.roleMap || {};
       buildManagedRoles(payload.referenceData || []);
       renderClanRanks(payload.ranks || []);
       loadRosterTable(payload.users || []);
+      
+      if (payload.currentUser && payload.currentUser.name) {
+        document.getElementById('logged-in-user-name').textContent = payload.currentUser.name;
+      }
     }).withFailureHandler(function(err) {
-      alert('Failed to initialize app: ' + err.message);
-      hideLoader();
-    }).getInitialPayload();
+      console.error('[OSRS Admin UI] Server error on getInitialPayload:', err);
+      if (err.message && err.message.includes('UNAUTHORIZED')) {
+        window.handleAuthError(err.message);
+      } else {
+        alert('Failed to initialize app: ' + err.message);
+        hideLoader();
+      }
+    }).getInitialPayload(token);
   }
 
   function buildManagedRoles(refData) {
@@ -36,7 +109,6 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function filterMainClanRanks(ranksStr, clansStr) {
-    // Fallback: If config is broken, just show raw ranks instead of hiding them
     if (!targetClanName || targetClanName === 'Unknown Clan') return ranksStr || ''; 
     if (!ranksStr || !clansStr) return '';
     
@@ -58,8 +130,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!idsString) return '';
     return idsString.toString().split(',').map(id => {
       id = id.trim();
-      if (id.startsWith("'")) id = id.substring(1); // Catch lingering formatting
-      if (!managedRoleIds.has(id)) return null; // Filter out irrelevant roles
+      if (id.startsWith("'")) id = id.substring(1);
+      if (!managedRoleIds.has(id)) return null;
       return discordRoleMap[id] || `Unknown (${id})`; 
     }).filter(Boolean).join(', ') || 'None';
   }
@@ -91,6 +163,9 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function loadRosterTable(preloadedData = null) {
+    const token = window.getSessionToken();
+    if (!token) { window.handleAuthError('Session expired.'); return; }
+
     showLoader();
     $('#btn-refresh-data').prop('disabled', true).text('Refreshing...');
     
@@ -100,10 +175,14 @@ document.addEventListener('DOMContentLoaded', function() {
       google.script.run.withSuccessHandler(function(data) {
         renderTable(data);
       }).withFailureHandler(function(err) {
-        alert('Failed to load table: ' + err.message);
-        $('#btn-refresh-data').prop('disabled', false).text('Refresh Data');
-        hideLoader();
-      }).getAllUsers();
+        if (err.message && err.message.includes('UNAUTHORIZED')) {
+          window.handleAuthError(err.message);
+        } else {
+          alert('Failed to load table: ' + err.message);
+          $('#btn-refresh-data').prop('disabled', false).text('Refresh Data');
+          hideLoader();
+        }
+      }).getAllUsers(token);
     }
   }
 
@@ -114,8 +193,8 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         window.dataTable = $('#roster-table').DataTable({
           data: data,
-          stateSave: true, // Remembers sorting, page, and hidden columns in browser cache!
-          scrollX: true,   // Enables native horizontal scrolling
+          stateSave: true,
+          scrollX: true,
           dom: "<'row mb-2'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8 d-flex justify-content-end align-items-center'<'mr-3'<'#flag-filter-container'>><'mr-2'B>f>>" +
                "<'row'<'col-sm-12'tr>>" +
                "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
@@ -226,7 +305,6 @@ document.addEventListener('DOMContentLoaded', function() {
               if (val) {
                 const parts = val.split('|');
                 const colName = parts[0], flag = parts[1];
-                // Regex exact match between string boundaries or commas
                 api.column(colName + ':name').search(`(?:^|,\\s*)${$.fn.dataTable.util.escapeRegex(flag)}(?:\\s*,|$)`, true, false).draw();
               } else {
                 api.draw();
@@ -244,7 +322,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderClanRanks(ranks) {
     const select = document.getElementById('edit-clan-rank');
-    select.innerHTML = '<option value="">-- No Rank Assigned --</option>'; // Clear existing options
+    if (!select) return;
+    select.innerHTML = '<option value="">-- No Rank Assigned --</option>';
     ranks.forEach(r => {
       const opt = document.createElement('option');
       opt.value = r; opt.textContent = r;
@@ -255,14 +334,26 @@ document.addEventListener('DOMContentLoaded', function() {
   function loadClanRanks() {
     google.script.run.withSuccessHandler(renderClanRanks).getClanRanks();
   }
-  window.loadClanRanks = loadClanRanks; // Expose for RanksManager
+
+  window.loadClanRanks = loadClanRanks;
   window.loadRosterTable = loadRosterTable;
   window.filterMainClanRanks = filterMainClanRanks;
   window.translateRoleIds = translateRoleIds;
 
-  // --- Event Listeners ---
+  // Logout Event Listener
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', function() {
+      const token = window.getSessionToken();
+      showLoader();
+      google.script.run.withSuccessHandler(function() {
+        window.handleAuthError('Logged out successfully.');
+      }).withFailureHandler(function() {
+        window.handleAuthError('Logged out.');
+      }).invalidateSession(token);
+    });
+  }
 
-  // 1. Toolbar Actions
   document.getElementById('btn-refresh-data').addEventListener('click', function() { loadRosterTable(); });
 });
 </script>

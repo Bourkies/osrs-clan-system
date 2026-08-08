@@ -12,17 +12,21 @@
       #global-loader {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background-color: rgba(255, 255, 255, 0.7);
-        z-index: 1060; /* Above bootstrap modals */
+        z-index: 1060;
         display: flex; justify-content: center; align-items: center;
       }
-      /* Clean up the account blocks inside the table */
       .account-block { font-size: 0.85rem; line-height: 1.2; }
       .account-block:last-child { border-bottom: none !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }
-      /* Truncate long flags to keep rows manageable */
       .flag-truncate { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
     </style>
   </head>
-  <body>
+  <body class="bg-light">
+    <script>
+      window.SERVER_SESSION_TOKEN = "<?!= sessionToken ?>";
+      window.SERVER_DISCORD_USER = JSON.parse('<?!= JSON.stringify(discordUser || null) ?>');
+      window.SERVER_LOGIN_URL = "<?!= loginUrl ?>";
+    </script>
+
     <!-- Global Loading Overlay -->
     <div id="global-loader" class="d-none">
       <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
@@ -30,18 +34,44 @@
       </div>
     </div>
 
-    <div class="container mt-4">
+    <!-- Login View (Shown when unauthenticated) -->
+    <div id="login-container" class="container" style="min-height: 80vh;">
+      <div class="row justify-content-center align-items-center" style="min-height: 80vh;">
+        <div class="col-md-5">
+          <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white text-center py-3">
+              <h4 class="mb-0 font-weight-bold">OSRS Clan Management</h4>
+              <small class="text-muted">Administrator Portal</small>
+            </div>
+            <div class="card-body p-4 text-center">
+              <p class="text-secondary mb-4">Please log in with your Discord account to access the clan roster management dashboard.</p>
+              <div id="login-alert" class="alert alert-danger d-none mb-3" role="alert"></div>
+              <a id="discord-login-btn" href="<?!= loginUrl ?>" target="_top" class="btn btn-primary btn-block py-2 font-weight-bold shadow-sm" style="background-color: #5865F2; border-color: #5865F2;">
+                Login with Discord
+              </a>
+              <p class="text-muted small mt-3 mb-0">Access is restricted to authorized server Moderators/Admins.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App View (Shown when authenticated) -->
+    <div id="app-container" class="container mt-4 d-none">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0">OSRS Clan Management</h2>
+        <div>
+          <h2 class="mb-0">OSRS Clan Management</h2>
+          <small class="text-muted">Logged in as: <strong id="logged-in-user-name" class="text-primary">Admin</strong></small>
+        </div>
         <div>
           <button type="button" class="btn btn-info mr-2" id="btn-open-ranks-modal">Manage Ranks</button>
           <button type="button" class="btn btn-success mr-2" id="btn-open-add-modal">Add New Member</button>
-          <button type="button" class="btn btn-secondary" id="btn-refresh-data">Refresh Data</button>
+          <button type="button" class="btn btn-secondary mr-2" id="btn-refresh-data">Refresh Data</button>
+          <button type="button" class="btn btn-outline-danger" id="btn-logout">Logout</button>
         </div>
       </div>
       
       <div class="table-responsive">
-        <!-- Header generated dynamically via JS -->
         <table id="roster-table" class="table table-bordered table-hover w-100"></table>
       </div>
     </div>
@@ -101,7 +131,6 @@
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.colVis.min.js"></script>
-    <!-- Include client-side JavaScript -->
     <?!= include('JavaScript'); ?>
     <?!= include('UserManager'); ?>
     <?!= include('RanksManager'); ?>

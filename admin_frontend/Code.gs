@@ -1,6 +1,6 @@
 /**
  * @file Code.gs
- * @description Backend logic for the OSRS Clan Management Web App.
+ * @description Backend logic for the OSRS Clan Management Web App with Discord OAuth authentication.
  */
 
 // --- CONFIGURATION ---
@@ -11,76 +11,337 @@ const SYSTEM_SCHEMA_TAB_NAME = 'System_Schema';
 const REFERENCE_DATA_TAB_NAME = 'Reference_Data';
 const SYSTEM_CONFIG_TAB_NAME = 'System_Config';
 const DISCORD_ROLES_TAB_NAME = 'Discord_Roles';
-const WOM_USER_AGENT = 'OSRS Clan Management Tool - Contact Discord: YourDiscordName'; // Update with your Discord name
+const WOM_USER_AGENT = 'OSRS Clan Management Tool - Contact Discord: YourDiscordName';
+
+const SESSION_LIFESPAN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 /**
- * Serves the main HTML page of the web app.
- * This is the entry point when a user visits the web app URL.
+ * Entry point for serving the web app. Handles Discord OAuth redirects & initial render.
+ * @param {object} e HTTP Event object from Google Apps Script.
  */
-function doGet() {
-  return HtmlService.createTemplateFromFile('Index').evaluate()
+function doGet(e) {
+  const params = (e && e.parameter) ? e.parameter : {};
+  const loginUrl = getDiscordOAuthLoginUrl();
+
+  // 1. Handle Logout request
+  if (params.logout && params.token) {
+    invalidateSession(params.token);
+    const template = HtmlService.createTemplateFromFile('Index');
+    template.sessionToken = '';
+    template.discordUser = null;
+    template.loginUrl = loginUrl;
+    template.authError = 'Logged out successfully.';
+    return template.evaluate()
+      .setTitle('OSRS Clan Management - Login')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // 2. Handle Discord OAuth Code Callback
+  if (params.code) {
+    try {
+      const oauthResult = handleDiscordOAuthCallback(params.code);
+      if (oauthResult.success) {
+        const template = HtmlService.createTemplateFromFile('Index');
+        template.sessionToken = oauthResult.sessionToken;
+        template.discordUser = oauthResult.discordUser;
+        template.loginUrl = loginUrl;
+        template.authError = '';
+        return template.evaluate()
+          .setTitle('OSRS Clan Management')
+          .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      } else {
+        return renderAuthErrorPage(oauthResult.message);
+      }
+    } catch (err) {
+      return renderAuthErrorPage('Authentication Exception: ' + err.message);
+    }
+  }
+
+  // 3. Default Render (Unauthenticated Shell or App Shell)
+  const template = HtmlService.createTemplateFromFile('Index');
+  template.sessionToken = '';
+  template.discordUser = null;
+  template.loginUrl = loginUrl;
+  template.authError = '';
+  return template.evaluate()
     .setTitle('OSRS Clan Management')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**
  * Includes the content of another file in the HTML template.
- * Used to include JavaScript.html and CSS.html into Index.html.
- * @param {string} filename The name of the file to include.
- * @returns {string} The content of the file.
  */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
 /**
- * Fetches all initial data required to load the dashboard in a single call.
- * @returns {object} An object containing the clan name, role map, users, and ranks.
+ * Renders a styled Access Denied / Auth Error page.
  */
-function getInitialPayload() {
+function renderAuthErrorPage(errorMessage) {
+  const loginUrl = getDiscordOAuthLoginUrl();
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <base target="_top">
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+        <title>Access Denied - OSRS Clan Management</title>
+      </head>
+      <body class="bg-light d-flex align-items-center justify-content-center" style="height: 100vh;">
+        <div class="card shadow-sm border-danger" style="max-width: 480px; width: 100%;">
+          <div class="card-header bg-danger text-white text-center">
+            <h4 class="mb-0">Access Denied</h4>
+          </div>
+          <div class="card-body text-center p-4">
+            <p class="text-danger font-weight-bold mb-3">${escapeHtml(errorMessage)}</p>
+            <p class="text-muted small">You must be logged into Discord and hold an authorized Moderator/Admin role in the server to access this management dashboard.</p>
+            <hr>
+            <a href="${loginUrl}" target="_top" class="btn btn-primary btn-block">Try Logging In Again with Discord</a>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('Access Denied - OSRS Clan Management')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Generates the Discord OAuth Authorization URL for the client.
+ */
+function getDiscordOAuthLoginUrl() {
+  const clientId = PropertiesService.getScriptProperties().getProperty('DISCORD_CLIENT_ID') || getSystemConfigValue('Discord Client ID') || '';
+  let redirectUri = PropertiesService.getScriptProperties().getProperty('DISCORD_REDIRECT_URI') || getSystemConfigValue('Discord Redirect URI') || '';
+  
+  if (!redirectUri) {
+    redirectUri = ScriptApp.getService().getUrl();
+  }
+
+  const scope = encodeURIComponent('identify guilds.members.read');
+  return `https://discord.com/api/v10/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}`;
+}
+
+/**
+ * Handles the OAuth code exchange with Discord and validates user roles.
+ */
+function handleDiscordOAuthCallback(code) {
+  const clientId = PropertiesService.getScriptProperties().getProperty('DISCORD_CLIENT_ID') || getSystemConfigValue('Discord Client ID') || '';
+  const clientSecret = PropertiesService.getScriptProperties().getProperty('DISCORD_CLIENT_SECRET') || getSystemConfigValue('Discord Client Secret') || '';
+  let redirectUri = PropertiesService.getScriptProperties().getProperty('DISCORD_REDIRECT_URI') || getSystemConfigValue('Discord Redirect URI') || '';
+  
+  if (!redirectUri) {
+    redirectUri = ScriptApp.getService().getUrl();
+  }
+
+  if (!clientId || !clientSecret) {
+    return { success: false, message: 'OAuth Error: DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET is missing from Apps Script Properties (or System_Config).' };
+  }
+
+  // 1. Token Exchange
+  const tokenPayload = {
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'authorization_code',
+    code: code,
+    redirect_uri: redirectUri
+  };
+
+  const tokenResponse = UrlFetchApp.fetch('https://discord.com/api/v10/oauth2/token', {
+    method: 'post',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    payload: Object.keys(tokenPayload).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(tokenPayload[k])).join('&'),
+    muteHttpExceptions: true
+  });
+
+  if (tokenResponse.getResponseCode() !== 200) {
+    return { success: false, message: `Discord Token Error (${tokenResponse.getResponseCode()}): ${tokenResponse.getContentText()}` };
+  }
+
+  const tokenData = JSON.parse(tokenResponse.getContentText());
+  const accessToken = tokenData.access_token;
+
+  // 2. Fetch User Profile (@me)
+  const userResponse = UrlFetchApp.fetch('https://discord.com/api/v10/users/@me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    muteHttpExceptions: true
+  });
+
+  if (userResponse.getResponseCode() !== 200) {
+    return { success: false, message: 'Failed to fetch Discord user profile.' };
+  }
+
+  const discordUser = JSON.parse(userResponse.getContentText());
+  const discordId = discordUser.id;
+  const discordName = discordUser.global_name || discordUser.username || discordId;
+
+  // 3. Fetch Guild Member Roles
+  const guildId = PropertiesService.getScriptProperties().getProperty('DISCORD_GUILD_ID') || getSystemConfigValue('Discord Guild ID') || '';
+  const allowedRolesStr = PropertiesService.getScriptProperties().getProperty('ADMIN_ACCESS_DISCORD_ROLES') || getSystemConfigValue('Admin Access Discord Roles') || '';
+  const allowedRoleIds = allowedRolesStr.split(',').map(r => r.trim()).filter(Boolean);
+
+  if (allowedRoleIds.length === 0) {
+    return { success: false, message: 'Security Configuration Error: Admin Access Discord Roles is missing from Script Properties (or System_Config).' };
+  }
+
+  let userRoles = [];
+  if (guildId) {
+    const memberUrl = `https://discord.com/api/v10/users/@me/guilds/${guildId}/member`;
+    const memberResponse = UrlFetchApp.fetch(memberUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      muteHttpExceptions: true
+    });
+
+    if (memberResponse.getResponseCode() === 200) {
+      const memberData = JSON.parse(memberResponse.getContentText());
+      userRoles = memberData.roles || [];
+    } else {
+      return { success: false, message: `Could not verify membership in Discord Guild (${guildId}). Are you in the Discord server?` };
+    }
+  }
+
+  // 4. Verify Role Authorization
+  const hasAuthorizedRole = userRoles.some(roleId => allowedRoleIds.includes(roleId));
+  if (!hasAuthorizedRole) {
+    logToAudit('Web App Security', `Access Denied - ${discordName} (${discordId}): Attempted login without required Moderator role.`);
+    return { success: false, message: `Account '${discordName}' does not hold the required Moderator/Admin role in the Discord server.` };
+  }
+
+  // 5. Create Session Token (7-Day Lifespan)
+  const sessionToken = Utilities.getUuid();
+  const authVersion = getSystemConfigValue('Auth Version') || '1';
+  const expiresAt = Date.now() + SESSION_LIFESPAN_MS;
+
+  const sessionObj = {
+    token: sessionToken,
+    discordId: discordId,
+    discordName: discordName,
+    authVersion: String(authVersion),
+    expiresAt: expiresAt
+  };
+
+  PropertiesService.getScriptProperties().setProperty('SESSION_' + sessionToken, JSON.stringify(sessionObj));
+  logToAudit('Web App Security', `Login Success - ${discordName} (${discordId}): Authenticated via Discord OAuth.`);
+
   return {
-    targetClanName: getTargetClanName(),
-    roleMap: getDiscordRolesMap(),
-    users: getAllUsers(),
-    ranks: getClanRanks(),
-    referenceData: getFullReferenceData()
+    success: true,
+    sessionToken: sessionToken,
+    discordUser: { id: discordId, name: discordName }
   };
 }
 
 /**
- * Exposes the target clan name to the frontend for filtering.
- * @returns {string} The target clan name.
+ * Validates incoming session tokens against expiration, existence, and global Auth Version.
+ * @param {string} sessionToken The session token provided by the client.
+ * @returns {object} The validated session object.
+ * @throws {Error} Throws error if token is invalid, expired, or revoked.
  */
-function getTargetClanName() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SYSTEM_CONFIG_TAB_NAME);
-  if (!sheet) return 'Unknown Clan';
-  
-  const data = sheet.getDataRange().getDisplayValues();
-  if (data.length <= 1) return 'Unknown Clan';
-  
-  // Map and trim headers to prevent accidental space issues
-  const headers = data[0].map(h => h.toString().trim());
-  const nameCol = headers.indexOf('Setting Name');
-  const valCol = headers.indexOf('Value');
-  
-  if (nameCol === -1 || valCol === -1) return 'Unknown Clan';
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][nameCol] && data[i][nameCol].toString().trim() === 'Target Clan Name') {
-      return data[i][valCol].toString().trim();
-    }
+function verifySession(sessionToken) {
+  if (!sessionToken) {
+    throw new Error('UNAUTHORIZED: Missing session token. Please log in with Discord.');
   }
-  return 'Unknown Clan';
+
+  const props = PropertiesService.getScriptProperties();
+  const sessionStr = props.getProperty('SESSION_' + sessionToken);
+  
+  if (!sessionStr) {
+    throw new Error('UNAUTHORIZED: Invalid or expired session. Please log in with Discord.');
+  }
+
+  const session = JSON.parse(sessionStr);
+
+  // Check 7-Day Expiry
+  if (Date.now() > session.expiresAt) {
+    props.deleteProperty('SESSION_' + sessionToken);
+    throw new Error('UNAUTHORIZED: Session expired (7-day limit reached). Please log in with Discord.');
+  }
+
+  // Check Global Auth Version (Session Revocation Check)
+  const currentAuthVersion = getSystemConfigValue('Auth Version') || '1';
+  if (String(session.authVersion) !== String(currentAuthVersion)) {
+    props.deleteProperty('SESSION_' + sessionToken);
+    throw new Error('UNAUTHORIZED: All sessions have been revoked by an Administrator. Please log in again.');
+  }
+
+  return session;
 }
 
 /**
- * Finds a user's row in the database by their Discord ID.
- * @param {string} discordId The Discord ID to search for.
- * @returns {object|null} An object with the user's data and row number, or null if not found.
+ * Invalidates a specific session token.
  */
-function findUserByDiscordId(discordId) {
+function invalidateSession(sessionToken) {
+  if (sessionToken) {
+    PropertiesService.getScriptProperties().deleteProperty('SESSION_' + sessionToken);
+  }
+}
+
+/**
+ * Fetches a single setting value from the System_Config tab.
+ */
+function getSystemConfigValue(settingName) {
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SYSTEM_CONFIG_TAB_NAME);
+    if (!sheet) return '';
+    const data = sheet.getDataRange().getDisplayValues();
+    if (data.length <= 1) return '';
+
+    const headers = data[0].map(h => h.toString().trim());
+    const nameCol = headers.indexOf('Setting Name');
+    const valCol = headers.indexOf('Value');
+    if (nameCol === -1 || valCol === -1) return '';
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][nameCol] && data[i][nameCol].toString().trim() === settingName) {
+        return data[i][valCol].toString().trim();
+      }
+    }
+  } catch (e) {
+    return '';
+  }
+  return '';
+}
+
+/**
+ * Validates session and fetches initial application data payload.
+ */
+function getInitialPayload(sessionToken) {
+  const session = verifySession(sessionToken);
+  return {
+    targetClanName: getTargetClanName(),
+    roleMap: getDiscordRolesMap(),
+    users: getAllUsers(sessionToken),
+    ranks: getClanRanks(),
+    referenceData: getFullReferenceData(),
+    currentUser: { id: session.discordId, name: session.discordName },
+    loginUrl: getDiscordOAuthLoginUrl()
+  };
+}
+
+/**
+ * Validates session and fetches login URL for unauthenticated clients.
+ */
+function getPublicLoginInfo() {
+  return {
+    loginUrl: getDiscordOAuthLoginUrl(),
+    targetClanName: getTargetClanName()
+  };
+}
+
+/**
+ * Exposes target clan name.
+ */
+function getTargetClanName() {
+  return getSystemConfigValue('Target Clan Name') || 'Unknown Clan';
+}
+
+/**
+ * Finds user row by Discord ID (Session Protected).
+ */
+function findUserByDiscordId(sessionToken, discordId) {
+  verifySession(sessionToken);
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
-  const data = sheet.getDataRange().getDisplayValues(); // Use getDisplayValues to avoid large number rounding
+  const data = sheet.getDataRange().getDisplayValues();
   const headers = data[0];
   const discordIdCol = headers.indexOf('Discord ID');
 
@@ -103,17 +364,17 @@ function findUserByDiscordId(discordId) {
 }
 
 /**
- * Fetches the Discord Role map to translate IDs to Names in the UI.
- * @returns {object} A dictionary mapping Role IDs to Names.
+ * Fetches Discord roles map.
  */
 function getDiscordRolesMap() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DISCORD_ROLES_TAB_NAME);
+  if (!sheet) return {};
   const data = sheet.getDataRange().getDisplayValues();
   const roleMap = {};
   if (data.length > 1) {
-    for(let i = 1; i < data.length; i++) {
+    for (let i = 1; i < data.length; i++) {
       let id = data[i][0].toString().trim();
-      if (id.startsWith("'")) id = id.substring(1); 
+      if (id.startsWith("'")) id = id.substring(1);
       roleMap[id] = data[i][1].toString().trim();
     }
   }
@@ -121,12 +382,12 @@ function getDiscordRolesMap() {
 }
 
 /**
- * Fetches all user records from the database to populate the frontend table.
- * @returns {Array<object>} An array of user objects.
+ * Fetches all user records (Session Protected).
  */
-function getAllUsers() {
+function getAllUsers(sessionToken) {
+  verifySession(sessionToken);
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
-  const data = sheet.getDataRange().getDisplayValues(); // getDisplayValues formats dates/numbers nicely
+  const data = sheet.getDataRange().getDisplayValues();
   if (data.length <= 1) return [];
 
   const headers = data[0];
@@ -143,18 +404,18 @@ function getAllUsers() {
 }
 
 /**
- * Fetches all available clan ranks from the Reference_Data tab.
- * @returns {Array<string>} An array of clan rank names.
+ * Fetches clan ranks.
  */
 function getClanRanks() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
-  const data = sheet.getDataRange().getDisplayValues(); // Use getDisplayValues for clean strings
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getDisplayValues();
   if (data.length <= 1) return [];
-  
+
   const headers = data[0];
   const rankColIndex = headers.indexOf('Clan Rank');
   if (rankColIndex === -1) return [];
-  
+
   const ranks = [];
   for (let i = 1; i < data.length; i++) {
     const rank = data[i][rankColIndex].toString().trim();
@@ -164,14 +425,14 @@ function getClanRanks() {
 }
 
 /**
- * Fetches the system schema to be used for validation.
- * @returns {Array<object>} An array of schema rules.
+ * Fetches system schema.
  */
 function getSystemSchema() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SYSTEM_SCHEMA_TAB_NAME);
+  if (!sheet) return [];
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
-  
+
   const headers = data[0];
   const schema = [];
   for (let i = 1; i < data.length; i++) {
@@ -185,17 +446,14 @@ function getSystemSchema() {
 }
 
 /**
- * Validates incoming form data against the rules defined in the System Schema.
- * @param {object} formData The complete proposed user data row.
- * @param {Array<object>} schema The system schema rules.
- * @returns {object} An object containing a 'valid' boolean and optional 'message'.
+ * Validates form data against schema.
  */
 function validateFormData(formData, schema) {
   for (let i = 0; i < schema.length; i++) {
     const rule = schema[i];
     const dbHeader = rule['Column Header (Database)'];
     const isRequired = rule['Required'] === true || rule['Required'].toString().toUpperCase() === 'TRUE';
-    
+
     if (isRequired) {
       const value = formData[dbHeader];
       if (value === undefined || value === null || value.toString().trim() === '') {
@@ -207,27 +465,23 @@ function validateFormData(formData, schema) {
 }
 
 /**
- * Creates or updates a user's record in the database.
- * @param {object} formData The user data submitted from the web app form.
- * @returns {object} A success or error message.
+ * Creates or updates user record (Session Protected).
  */
-function createOrUpdateUser(formData) {
+function createOrUpdateUser(sessionToken, formData) {
+  const session = verifySession(sessionToken);
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(15000); // Wait up to 15 seconds for any concurrent saves to finish
+    lock.waitLock(15000);
     if (!formData || !formData['Discord ID']) {
       return { success: false, message: 'Validation Error: Discord ID is missing from the payload.' };
     }
 
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATABASE_TAB_NAME);
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    
-    const existingUser = findUserByDiscordId(formData['Discord ID']);
 
-    // Columns strictly managed by the Auditor shouldn't be overwritten by Web App form submissions
+    const existingUser = findUserByDiscordId(sessionToken, formData['Discord ID']);
     const volatileHeaders = ['Discord Name', 'RSNs', 'Account Clan', 'Game Ranks', 'Discord Ranks', 'Join Date', 'System Flags'];
 
-    // Build the complete proposed data object
     let proposedData = {};
     headers.forEach(header => {
       let val;
@@ -236,27 +490,23 @@ function createOrUpdateUser(formData) {
       } else {
         val = formData.hasOwnProperty(header) ? formData[header] : (existingUser ? existingUser.user[header] : '');
       }
-      // Prepend apostrophe to force Discord ID as plain text in the Google Sheet
       if (header === 'Discord ID' && val !== '' && !val.toString().startsWith("'")) val = "'" + val.toString().trim();
       proposedData[header] = val;
     });
 
-    // Validate the proposed data against the System Schema
     const schema = getSystemSchema();
     const validation = validateFormData(proposedData, schema);
-    
+
     if (!validation.valid) {
       return { success: false, message: 'Validation Error: ' + validation.message };
     }
 
-    // Map the proposed data back to a flat array for insertion
     let rowData = headers.map(header => proposedData[header]);
-    
     const discordId = formData['Discord ID'].toString().replace(/^'/, '');
     const dName = (existingUser && existingUser.user['Discord Name']) ? existingUser.user['Discord Name'] : 'Unknown';
+    const auditUserString = `${session.discordName} (${session.discordId})`;
 
     if (existingUser) {
-      // Cell-Level Updates: Only write static fields that have changed to prevent overwriting the Auditor
       let updates = 0;
       headers.forEach((header, index) => {
         if (!volatileHeaders.includes(header) && proposedData[header] !== undefined) {
@@ -266,16 +516,15 @@ function createOrUpdateUser(formData) {
           }
         }
       });
-      logToAudit('Web App', `Manual Update - ${dName} (${discordId}): Updated ${updates} fields.`);
+      logToAudit('Web App', `Manual Update - ${dName} (${discordId}): Updated ${updates} fields.`, auditUserString);
       return { success: true, message: `User ${discordId} updated successfully.` };
     } else {
-      // Create new row
       sheet.appendRow(rowData);
-      logToAudit('Web App', `Manual Create - Unknown (${discordId}): Added new member to database.`);
+      logToAudit('Web App', `Manual Create - Unknown (${discordId}): Added new member to database.`, auditUserString);
       return { success: true, message: `User ${discordId} created successfully.` };
     }
   } catch (e) {
-    logToAudit('Web App', `System Error - System (N/A): ${e.message}`);
+    logToAudit('Web App', `System Error - System (N/A): ${e.message}`, `${session.discordName} (${session.discordId})`);
     return { success: false, message: `An error occurred: ${e.message}` };
   } finally {
     lock.releaseLock();
@@ -283,22 +532,21 @@ function createOrUpdateUser(formData) {
 }
 
 /**
- * Fetches all reference data for the ranks manager.
- * @returns {Array<object>} An array of rank objects.
+ * Fetches full reference data.
  */
 function getFullReferenceData() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
+  if (!sheet) return [];
   const data = sheet.getDataRange().getDisplayValues();
   if (data.length <= 1) return [];
-  
+
   const headers = data[0];
   const ranks = [];
-  
+
   for (let i = 1; i < data.length; i++) {
     let rank = {};
     headers.forEach((h, index) => {
       let val = data[i][index];
-      // Clean up any formatting apostrophes for the frontend
       if (['Required Discord Roles', 'Allowed Discord Roles', 'Excluded Discord Roles'].includes(h)) val = val.toString().replace(/^'/, '');
       rank[h] = val;
     });
@@ -308,73 +556,66 @@ function getFullReferenceData() {
 }
 
 /**
- * Replaces the reference data with a new sorted list from the UI.
- * @param {Array<object>} ranks The complete array of rank objects.
- * @returns {object} Success or error response.
+ * Saves reference data (Session Protected).
  */
-function saveReferenceData(ranks) {
+function saveReferenceData(sessionToken, ranks) {
+  const session = verifySession(sessionToken);
+  const auditUserString = `${session.discordName} (${session.discordId})`;
+
   try {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(REFERENCE_DATA_TAB_NAME);
     const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
-    
-    // Clear everything except headers
+
     if (lastRow > 1) {
       sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
     }
-    
+
     if (ranks && ranks.length > 0) {
       const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
       const rows = ranks.map(rank => {
         return headers.map(header => {
           let val = rank[header] !== undefined ? rank[header] : '';
-          // Ensure single Discord IDs don't get scientific notation
           if (['Required Discord Roles', 'Allowed Discord Roles', 'Excluded Discord Roles'].includes(header) && val !== '' && !val.toString().includes(',') && !val.toString().startsWith("'")) {
-             val = "'" + val;
+            val = "'" + val;
           }
           return val;
         });
       });
       sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     }
-    
-    logToAudit('Web App', `System Action - System (N/A): Updated Clan Rank Mappings via Web UI.`);
+
+    logToAudit('Web App', `System Action - Updated Clan Rank Mappings via Web UI.`, auditUserString);
     return { success: true };
   } catch (e) {
-    logToAudit('Web App', `System Error - System (N/A): Error saving ranks - ${e.message}`);
+    logToAudit('Web App', `System Error - Error saving ranks - ${e.message}`, auditUserString);
     return { success: false, message: e.message };
   }
 }
 
 /**
- * Queries the Wise Old Man API for a player's exact match and their clan.
- * @param {string} username The RSN to search.
- * @returns {object} Search result with WOM ID, Display Name, Clan, and Rank.
+ * Queries Wise Old Man API (Session Protected).
  */
-function searchWomPlayer(username) {
+function searchWomPlayer(sessionToken, username) {
+  verifySession(sessionToken);
   try {
     const options = {
       muteHttpExceptions: true,
-      headers: {
-        'User-Agent': WOM_USER_AGENT
-      }
+      headers: { 'User-Agent': WOM_USER_AGENT }
     };
 
-    // 1. Search for the player to get the exact ID (handles capitalization/spacing)
     const searchUrl = `https://api.wiseoldman.net/v2/players/search?username=${encodeURIComponent(username)}&limit=1`;
     const searchRes = UrlFetchApp.fetch(searchUrl, options);
-    
+
     if (searchRes.getResponseCode() === 200) {
       const data = JSON.parse(searchRes.getContentText());
       if (data && data.length > 0) {
         const player = data[0];
-        
-        // 2. Fetch their group memberships
         const membershipsUrl = `https://api.wiseoldman.net/v2/players/${encodeURIComponent(player.username)}/groups`;
         const membershipsRes = UrlFetchApp.fetch(membershipsUrl, options);
         let clanString = 'Not in WOM Group';
         let rankString = 'None';
-        
+
         if (membershipsRes.getResponseCode() === 200) {
           const memberships = JSON.parse(membershipsRes.getContentText());
           if (memberships && memberships.length > 0) {
@@ -382,10 +623,10 @@ function searchWomPlayer(username) {
             rankString = memberships.map(m => m.role ? m.role : 'Unknown').join(', ');
           }
         }
-        
-        return { 
-          success: true, 
-          womId: player.id, 
+
+        return {
+          success: true,
+          womId: player.id,
           displayName: player.displayName,
           clan: clanString,
           rank: rankString
@@ -402,13 +643,25 @@ function searchWomPlayer(username) {
 }
 
 /**
- * Appends a log entry to the Audit_Log tab.
- * @param {string} source The source of the log ('Web App' or 'The Auditor').
- * @param {string} logEntry The detailed log message.
+ * Logs event to Audit_Log with standard Discord User identifier.
  */
-function logToAudit(source, logEntry) {
+function logToAudit(source, logEntry, userOverride) {
   const auditSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(AUDIT_LOG_TAB_NAME);
-  const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'); // Strip milliseconds for pure ISO 8601
-  const user = Session.getActiveUser().getEmail();
+  if (!auditSheet) return;
+  const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const user = userOverride || 'System (N/A)';
   auditSheet.appendRow([timestamp, source, user, logEntry]);
+}
+
+/**
+ * Escapes HTML characters for security.
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

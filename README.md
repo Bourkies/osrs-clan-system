@@ -27,10 +27,10 @@ By keeping the data decoupled from the application logic, the entire system can 
 
 To deploy or configure specific parts of the system, please refer to the dedicated READMEs in their respective folders:
 
-*   Admin Webapp Setup
-*   Backend Auditor Setup
-*   ETL Pipeline Setup
-*   Dashboard UI Setup
+*   [Admin Webapp Setup](admin_frontend/README_webapp.MD)
+*   [Backend Auditor Setup](backend_auditor/README_auditor.md)
+*   [ETL Pipeline Setup](etl_pipeline/README_etl.md)
+*   [Dashboard UI Setup](dashboard_ui/README_dashboard.md)
 
 ### Core Blueprint
 

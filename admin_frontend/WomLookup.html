@@ -6,8 +6,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Delegate events for dynamically added Account blocks
   document.getElementById('accounts-container').addEventListener('click', function(e) {
-    
-    // --- Search Button Click ---
     if (e.target.classList.contains('search-wom-btn')) {
       currentActiveGroup = e.target.closest('.account-group');
       currentSearchBtn = e.target;
@@ -20,17 +18,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // Handle Enter Key in Search Modal
   document.getElementById('wom-search-input').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') document.getElementById('btn-execute-wom-search').click();
   });
 
-  // Execute search from modal
   document.getElementById('btn-execute-wom-search').addEventListener('click', function() {
     const username = document.getElementById('wom-search-input').value.trim();
     const statusLabel = currentActiveGroup.querySelector('.wom-search-status');
+    const token = window.getSessionToken();
 
     if (!username) return;
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); return; }
 
     $('#wom-search-modal').modal('hide');
     
@@ -56,12 +54,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }).withFailureHandler(function(err) {
       currentSearchBtn.disabled = false;
       currentSearchBtn.textContent = 'Look Up';
-      statusLabel.textContent = 'Error: ' + err.message;
-      statusLabel.className = 'wom-search-status text-danger';
-    }).searchWomPlayer(username);
+      if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) {
+        window.handleAuthError(err.message);
+      } else {
+        statusLabel.textContent = 'Error: ' + err.message;
+        statusLabel.className = 'wom-search-status text-danger';
+      }
+    }).searchWomPlayer(token, username);
   });
 
-  // Apply details to form
   document.getElementById('btn-confirm-wom-apply').addEventListener('click', function() {
     if (!currentActiveGroup || !currentWomResult) return;
     

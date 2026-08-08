@@ -250,12 +250,21 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
 
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); btn.disabled = false; return; }
+
     google.script.run.withSuccessHandler(function(res) {
       if (res.success) {
         msg.textContent = 'Saved successfully!'; msg.className = 'mr-3 text-success font-weight-bold';
         setTimeout(() => { $('#ranks-modal').modal('hide'); btn.disabled = false; msg.classList.add('d-none'); if(window.loadClanRanks) window.loadClanRanks(); }, 1000);
       } else { msg.textContent = 'Error: ' + res.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false; }
-    }).saveReferenceData(ranksToSave);
+    }).withFailureHandler(function(err) {
+      if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) {
+        window.handleAuthError(err.message);
+      } else {
+        msg.textContent = 'Error: ' + err.message; msg.className = 'mr-3 text-danger font-weight-bold'; btn.disabled = false;
+      }
+    }).saveReferenceData(token, ranksToSave);
   });
 
 });

@@ -217,15 +217,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const discordId = document.getElementById('new-discord-id').value.trim();
     const btn = $(this);
     if (!/^\d{17,19}$/.test(discordId)) { document.getElementById('add-error-msg').classList.remove('d-none'); return; }
-    document.getElementById('add-error-msg').classList.add('d-none');
-    btn.prop('disabled', true).text('Checking...');
-    showLoader();
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); btn.prop('disabled', false).text('Continue'); return; }
+
     google.script.run.withSuccessHandler(function(result) {
       btn.prop('disabled', false).text('Continue'); hideLoader(); $('#add-member-modal').modal('hide');
       openEditModal(result, discordId);
     }).withFailureHandler(function(err) {
-      alert('Error checking ID: ' + err.message); btn.prop('disabled', false).text('Continue'); hideLoader();
-    }).findUserByDiscordId(discordId);
+      if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) window.handleAuthError(err.message);
+      else alert('Error checking ID: ' + err.message);
+      btn.prop('disabled', false).text('Continue'); hideLoader();
+    }).findUserByDiscordId(token, discordId);
   });
 
   // Bind row click using global dataTable exposed in JavaScript.html
@@ -233,10 +235,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!window.dataTable) return;
     const data = window.dataTable.row(this).data();
     if (!data) return; 
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); return; }
     showLoader();
     google.script.run.withSuccessHandler(function(result) {
       hideLoader(); openEditModal(result, data['Discord ID']);
-    }).withFailureHandler(function(err){ hideLoader(); alert('Error: ' + err.message); }).findUserByDiscordId(data['Discord ID']);
+    }).withFailureHandler(function(err){
+      hideLoader();
+      if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) window.handleAuthError(err.message);
+      else alert('Error: ' + err.message);
+    }).findUserByDiscordId(token, data['Discord ID']);
   });
 
   document.getElementById('edit-user-form').addEventListener('submit', function(e) {
@@ -271,18 +279,27 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     pendingFormData = data; 
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); hideLoader(); return; }
+
     if (initialLoadedData) {
       google.script.run.withSuccessHandler(function(latestResult) {
         if (latestResult && hasConflict(initialLoadedData, latestResult.user)) $('#conflict-modal').modal('show');
         else executeSave(pendingFormData);
-      }).findUserByDiscordId(data['Discord ID']);
+      }).withFailureHandler(function(err) {
+        hideLoader();
+        if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) window.handleAuthError(err.message);
+        else alert('Error checking user: ' + err.message);
+      }).findUserByDiscordId(token, data['Discord ID']);
     } else { executeSave(pendingFormData); }
   });
 
   document.getElementById('btn-conflict-overwrite').addEventListener('click', function() { $('#conflict-modal').modal('hide'); executeSave(pendingFormData); });
   document.getElementById('btn-conflict-reload').addEventListener('click', function() {
     $('#conflict-modal').modal('hide'); showLoader();
-    google.script.run.withSuccessHandler(function(result) { hideLoader(); openEditModal(result, pendingFormData['Discord ID']); }).findUserByDiscordId(pendingFormData['Discord ID']);
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); hideLoader(); return; }
+    google.script.run.withSuccessHandler(function(result) { hideLoader(); openEditModal(result, pendingFormData['Discord ID']); }).findUserByDiscordId(token, pendingFormData['Discord ID']);
   });
 
   function openEditModal(result, targetDiscordId) {
@@ -389,6 +406,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function executeSave(payload) {
+    const token = window.getSessionToken();
+    if (!token) { if (window.handleAuthError) window.handleAuthError('Session expired.'); hideLoader(); return; }
     google.script.run.withSuccessHandler(function(response) {
       const statusMsg = document.getElementById('edit-status-message');
       if (response.success) {
@@ -398,8 +417,11 @@ document.addEventListener('DOMContentLoaded', function() {
         statusMsg.textContent = 'Error: ' + response.message; statusMsg.className = 'alert alert-danger mb-3'; statusMsg.classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
       }
     }).withFailureHandler(function(err) {
-      document.getElementById('edit-status-message').textContent = 'Network Error: ' + err.message; document.getElementById('edit-status-message').className = 'alert alert-danger mb-3'; document.getElementById('edit-status-message').classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
-    }).createOrUpdateUser(payload);
+      if (err.message && err.message.includes('UNAUTHORIZED') && window.handleAuthError) window.handleAuthError(err.message);
+      else {
+        document.getElementById('edit-status-message').textContent = 'Network Error: ' + err.message; document.getElementById('edit-status-message').className = 'alert alert-danger mb-3'; document.getElementById('edit-status-message').classList.remove('d-none'); document.getElementById('btn-save-member').disabled = false; hideLoader();
+      }
+    }).createOrUpdateUser(token, payload);
   }
 });
 </script>

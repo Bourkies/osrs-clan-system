@@ -13,7 +13,7 @@ A downstream **ETL Pipeline** and **Streamlit Dashboard** provide a public-facin
 
 Acts as the Single Source of Truth (SSOT). It provides a familiar, readable format for clan leadership but is protected from accidental human error.
 
-* **Access Control:** **Admins** must be granted Editor access to the raw spreadsheet. To protect the data from human error, all tabs are protected using Google Sheets' "Show a warning when editing this range" feature. This funnels Admins to use the Web App UI for all modifications while retaining full accountability via Google's native Version History.
+* **Access Control:** The Google Sheet acts as the primary data store. The spreadsheet is kept **100% private** to the Owner and the Google Service Account. Non-owner admins access the database exclusively via the Web App UI authenticated through **Discord OAuth** and Discord server role checks, eliminating direct spreadsheet access requirements.
 
 ### **B. The Frontend UI (Google Web App / HTML & JS)**
 
@@ -110,7 +110,10 @@ Holds the clan variables so they do not need to be hardcoded into the Python/JS 
 ### **System_Config**
 
 **Immutable Tab Name:** `System_Config`  
-A key-value store for global settings used by both the Web App and The Auditor.
+A key-value store for operational clan variables used by both the Web App and The Auditor.
+
+> [!SECURITY]
+> **Secret Storage Policy**: Sensitive OAuth credentials (`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_GUILD_ID`, `ADMIN_ACCESS_DISCORD_ROLES`, `DISCORD_REDIRECT_URI`) are stored in Apps Script **Script Properties** (`PropertiesService.getScriptProperties()`) to keep secrets 100% hidden from the Google Sheet. The `System_Config` tab holds non-sensitive operational settings.
 
 | Column Header | Code Key | Data Type | Notes |
 | :--- | :--- | :--- | :--- |
@@ -123,7 +126,8 @@ A key-value store for global settings used by both the Web App and The Auditor.
 *(note: Ensure settings are updated and clan name is set correctly before deployment)*
 | Setting Name | Value | Description |
 | :--- | :--- | :--- |
-| Target Clan Name | ENTER_CLAN_NAME_HERE | The exact WOM Group Name to filter in-game ranks against and check clan departures. do not include quations eg: clan name |
+| Target Clan Name | ENTER_CLAN_NAME_HERE | The exact WOM Group Name to filter in-game ranks against and check clan departures. |
+| Auth Version | 1 | Incrementing this setting invalidates all active 7-day user sessions globally. |
 
 ### **Discord_Roles**
 
@@ -202,12 +206,14 @@ A human-readable, append-only log for tracking all significant events and discre
 **Function:** Provides a safe, validated interface for Admins to manage clan roster data without accessing the raw spreadsheet.
 
 **Workflow:**
-1. An **Admin** opens the Web App UI.
-2. **Search/Create:** They query an existing member or create a new entry using a **Discord ID** (the primary key). The Web App enforces uniqueness, preventing duplicate rows for the same Discord ID.
-3. **Data Entry & WOM Lookup:** They add alt accounts by searching a player's RSN via the built-in search tool. The Web App securely queries the Wise Old Man API to find and lock in the static **WOM ID**. The Web App sanitizes all inputs (stripping user-entered commas) and constructs the comma-separated strings programmatically to prevent formatting errors.
-4. **Rank Management:** They manually set or update the **Clan Rank** and **Clan Rank Date** as needed.
-5. **Background Formatting:** If a new Clan Rank is set, the Web App logic automatically appends the rank and date to the **Rank History** string.
-6. **Commit & Log:** The Web App writes the updated row to the `Database` tab and appends a record of the change (e.g., "Updated Clan Rank to Corporal") to the `Audit_Log` tab.
+1. An **Admin / Moderator** opens `https://clan_spreadsheet.yourdomain.com` (proxied via Cloudflare Worker).
+2. **Discord OAuth Authentication**: Unauthenticated users see only a "Login with Discord" page. Upon logging in, the Web App exchanges the code for a Discord user profile and queries the server member endpoint to verify that the user holds an authorized role ID listed in `System_Config` (`Admin Access Discord Roles`, e.g. `@moderator`).
+3. **Session Persistence & Revocation**: Authorized users receive a 7-day session token stored in browser `localStorage`. If `Auth Version` in `System_Config` is updated, all active sessions are instantly revoked system-wide.
+4. **Search/Create:** They query an existing member or create a new entry using a **Discord ID** (the primary key). The Web App enforces uniqueness, preventing duplicate rows for the same Discord ID.
+5. **Data Entry & WOM Lookup:** They add alt accounts by searching a player's RSN via the built-in search tool. The Web App securely queries the Wise Old Man API to find and lock in the static **WOM ID**. The Web App sanitizes all inputs (stripping user-entered commas) and constructs the comma-separated strings programmatically to prevent formatting errors.
+6. **Rank Management:** They manually set or update the **Clan Rank** and **Clan Rank Date** as needed.
+7. **Background Formatting:** If a new Clan Rank is set, the Web App logic automatically appends the rank and date to the **Rank History** string.
+8. **Commit & Log:** The Web App writes the updated row to the `Database` tab and appends a record of the change (e.g., "Updated Clan Rank to Corporal") to the `Audit_Log` tab stamped with the moderator's `DiscordName (DiscordID)`.
 
 ### **The Auditor Workflow (Backend Automation)**
 
