@@ -49,6 +49,34 @@ class SQLiteManager:
             ''')
 
             # Table 4: Issue Tracker (Duration & History Tracking)
+            # Check if existing issue_tracker has legacy table-level UNIQUE constraint
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='issue_tracker'")
+            table_info = cursor.fetchone()
+            if table_info:
+                sql_normalized = "".join(table_info[0].split()).upper()
+                if "UNIQUE(" in sql_normalized and "STATUS" in sql_normalized:
+                    logger.info("Migrating issue_tracker schema to use partial unique index...")
+                    cursor.execute('''
+                        CREATE TABLE issue_tracker_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            entity_type TEXT NOT NULL,
+                            entity_id TEXT NOT NULL,
+                            issue_type TEXT NOT NULL,
+                            first_seen_at DATETIME NOT NULL,
+                            last_seen_at DATETIME NOT NULL,
+                            consecutive_runs INTEGER DEFAULT 1,
+                            status TEXT DEFAULT 'active',
+                            resolved_at DATETIME
+                        )
+                    ''')
+                    cursor.execute('''
+                        INSERT INTO issue_tracker_new (id, entity_type, entity_id, issue_type, first_seen_at, last_seen_at, consecutive_runs, status, resolved_at)
+                        SELECT id, entity_type, entity_id, issue_type, first_seen_at, last_seen_at, consecutive_runs, status, resolved_at
+                        FROM issue_tracker
+                    ''')
+                    cursor.execute('DROP TABLE issue_tracker')
+                    cursor.execute('ALTER TABLE issue_tracker_new RENAME TO issue_tracker')
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS issue_tracker (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,9 +87,13 @@ class SQLiteManager:
                     last_seen_at DATETIME NOT NULL,
                     consecutive_runs INTEGER DEFAULT 1,
                     status TEXT DEFAULT 'active',
-                    resolved_at DATETIME,
-                    UNIQUE(entity_type, entity_id, issue_type, status)
+                    resolved_at DATETIME
                 )
+            ''')
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_tracker_active 
+                ON issue_tracker (entity_type, entity_id, issue_type) 
+                WHERE status = 'active'
             ''')
             conn.commit()
 
