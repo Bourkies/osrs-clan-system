@@ -147,7 +147,7 @@ def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
         logger.info("Executing Post-Audit Reporting Scripts...")
         activity_reporter.generate_activity_report()
         rank_up_suggester.generate_suggestions(roster_data, rank_rules)
-        inactivity_monitor.generate_inactivity_report(roster_data, rank_rules)
+        inactivity_monitor.generate_inactivity_report(roster_data, rank_rules, target_clan_name=target_clan_name)
         
     db.trim_audit_logs(keep_last=AUDIT_LOG_RETENTION_COUNT)
     db.append_audit_logs(["System Action - System (N/A): Auditor run finished."])
