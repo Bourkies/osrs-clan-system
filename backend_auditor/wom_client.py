@@ -42,6 +42,14 @@ class WomClient:
             os.remove(self.cache_file)
         logger.info("WOM Cache has been forcibly cleared.")
 
+    def clear_group_cache(self):
+        """Clears only the group-related cache keys from WOM cache."""
+        keys_to_remove = [k for k in self.cache.keys() if k.startswith("group_")]
+        for k in keys_to_remove:
+            del self.cache[k]
+        self._save_cache()
+        logger.info(f"WOM Group Cache cleared ({len(keys_to_remove)} keys removed).")
+
     def get_cache_timestamp(self, cache_key):
         """Returns the unix timestamp of cached key, or 0 if missing/uncached."""
         if cache_key in self.cache:

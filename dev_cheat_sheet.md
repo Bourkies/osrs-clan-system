@@ -39,7 +39,13 @@ This document contains quick copy-paste commands for managing the Docker contain
 `docker compose exec backend_auditor python backend_auditor/run_auditor.py`
 
 **Specialized Runs (Using Flags):**
-Force clear and refresh the Wise Old Man cache:
+Fetch fresh in-game clan roster from WOM (fast ~1s, keeps player caches) without webhook:
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --refresh-group --no-webhook`
+
+Fetch fresh in-game clan roster from WOM, sync database only (skip audits & webhook):
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --refresh-group --sync-only`
+
+Force clear and refresh the entire Wise Old Man cache (all players & group):
 `docker compose exec backend_auditor python backend_auditor/run_auditor.py --force-wom`
 
 Run full sync and audit, but DO NOT post to the Discord webhook:
@@ -53,7 +59,7 @@ Run the Account Linker (Fuzzy match unlinked accounts):
 `docker compose exec backend_auditor python backend_auditor/account_linker.py`
 
 Run the Rank Matcher (Bulk-assign missing clan ranks):
-`docker compose exec backend_auditor python backend_auditor/rank_matcher.py`
+`docker compose exec backend_auditor python backend_auditor/rank_matcher.py` Note: 2-y-n
 
 Run the Audit Resolver (Interactively resolve warning flags):
 `docker compose exec backend_auditor python backend_auditor/audit_resolver.py`

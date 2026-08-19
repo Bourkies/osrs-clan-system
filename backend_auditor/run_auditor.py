@@ -80,7 +80,7 @@ def release_lock():
     except Exception as e:
         logger.error(f"Error releasing lock: {e}")
 
-def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
+def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, sync_only=False):
     logger.info("Initializing Orchestrator...")
     db = DBManager(SPREADSHEET_ID)
     sqlite_mgr = SQLiteManager(SHARED_DATA_DIR / "databases" / "history.db")
@@ -94,6 +94,8 @@ def run_orchestrator(force_wom=False, skip_webhook=False, sync_only=False):
     
     if force_wom:
         wom.clear_cache()
+    elif refresh_group:
+        wom.clear_group_cache()
 
     db.append_audit_logs(["System Action - System (N/A): Auditor run started."])
 
@@ -163,13 +165,19 @@ def main():
 
     parser = argparse.ArgumentParser(description="OSRS Clan Auditor")
     parser.add_argument('--force-wom', action='store_true', help='Force clear and refresh the entire WOM cache.')
+    parser.add_argument('--refresh-group', action='store_true', help='Force refresh only the WOM clan group roster cache (keeps individual player caches).')
     parser.add_argument('--no-webhook', action='store_true', help='Run full sync and audit, but skip sending the Discord webhook.')
     parser.add_argument('--sync-only', action='store_true', help='Sync APIs to database, but skip audits and webhook.')
     args = parser.parse_args()
 
     try:
         acquire_lock()
-        run_orchestrator(force_wom=args.force_wom, skip_webhook=args.no_webhook, sync_only=args.sync_only)
+        run_orchestrator(
+            force_wom=args.force_wom, 
+            refresh_group=args.refresh_group, 
+            skip_webhook=args.no_webhook, 
+            sync_only=args.sync_only
+        )
     finally:
         release_lock()
 
