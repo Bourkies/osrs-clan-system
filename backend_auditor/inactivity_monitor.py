@@ -7,8 +7,8 @@ from loguru import logger
 from constants import SHARED_DATA_DIR, SystemFlag
 from file_utils import safe_write_report
 
-def generate_inactivity_report(all_members, rank_rules):
-    logger.info("Starting Clan Inactivity Monitor...")
+def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osrs"):
+    logger.info(f"Starting Clan Inactivity Monitor for target clan '{target_clan_name}'...")
     input_db = SHARED_DATA_DIR / "databases" / "activity.db"
     output_md = SHARED_DATA_DIR / "reports" / "inactivity_report.md"
     
@@ -116,6 +116,38 @@ def generate_inactivity_report(all_members, rank_rules):
         if not max_days:
             continue
             
+        # Parse all linked accounts
+        rsns = [r.strip() for r in str(member.get('RSNs', '')).split(',') if r.strip()]
+        wom_ids = [w.strip() for w in str(member.get('WOM IDs', '')).split(',') if w.strip()]
+        account_clans = [c.strip() for c in str(member.get('Account Clan', '')).split(',')]
+        
+        if not rsns:
+            # Skip members with no linked accounts - they have no in-game account to remove
+            continue
+            
+        accounts = []
+        for i in range(len(rsns)):
+            rsn = rsns[i]
+            wid = wom_ids[i] if i < len(wom_ids) else None
+            clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "None"
+            is_in_clan = bool(target_clan_name and clan.lower() == target_clan_name.lower())
+            wom_date = wom_activity_map.get(wid) if wid else None
+            
+            accounts.append({
+                'rsn': rsn,
+                'wom_id': wid,
+                'clan': clan,
+                'is_in_clan': is_in_clan,
+                'wom_date': wom_date
+            })
+            
+        clan_accounts = [acc for acc in accounts if acc['is_in_clan']]
+        other_accounts = [acc for acc in accounts if not acc['is_in_clan']]
+        
+        # Only evaluate members who currently have at least one account in the target clan
+        if not clan_accounts:
+            continue
+            
         discord_id = str(member.get('Discord ID', '')).replace("'", "").strip()
         stats = activity_stats.get(discord_id, {})
         
@@ -125,7 +157,6 @@ def generate_inactivity_report(all_members, rank_rules):
             discord_last_active_date = datetime.strptime(last_active_str, "%Y-%m-%d").date()
             discord_last_active_display = last_active_str
         else:
-            # Fallback to Join Date if they have NO activity on record
             join_str = str(member.get('Join Date', '')).strip()
             try:
                 discord_last_active_date = datetime.strptime(join_str, "%Y-%m-%d").date()
@@ -134,18 +165,14 @@ def generate_inactivity_report(all_members, rank_rules):
                 discord_last_active_date = None
                 discord_last_active_display = "Unknown"
                 
-        # --- Get WOM Last Changed Active ---
-        wom_ids_str = str(member.get('WOM IDs', '')).strip()
-        wom_ids = [w.strip() for w in wom_ids_str.split(',') if w.strip()]
-        wom_dates = [wom_activity_map[wid] for wid in wom_ids if wid in wom_activity_map]
-        
-        wom_last_active_date = max(wom_dates) if wom_dates else None
+        # --- Get In-Clan WOM Last Changed Active ---
+        clan_wom_dates = [acc['wom_date'] for acc in clan_accounts if acc['wom_date'] is not None]
+        wom_last_active_date = max(clan_wom_dates) if clan_wom_dates else None
         wom_last_active_display = wom_last_active_date.strftime("%Y-%m-%d") if wom_last_active_date else "Unknown"
         
         # --- Compare for True Last Active ---
         discord_days = (today - discord_last_active_date).days if discord_last_active_date else 9999
         wom_days = (today - wom_last_active_date).days if wom_last_active_date else 9999
-        
         true_days_inactive = min(discord_days, wom_days)
             
         if discord_days > max_days or wom_days > max_days:
@@ -153,10 +180,15 @@ def generate_inactivity_report(all_members, rank_rules):
             if not discord_name or discord_name.lower() == 'unknown':
                 discord_name = discord_id
                 
+            clan_rsns_str = ", ".join(acc['rsn'] for acc in clan_accounts)
+            other_rsns_str = ", ".join(acc['rsn'] for acc in other_accounts) if other_accounts else ""
+            
             user_data = {
                 'discord_id': discord_id,
                 'discord_name': discord_name,
-                'rsns': str(member.get('RSNs', 'None')).strip(),
+                'clan_rsns': clan_rsns_str,
+                'other_rsns': other_rsns_str,
+                'accounts': accounts,
                 'rank': clan_rank,
                 'discord_days': discord_days,
                 'wom_days': wom_days,
@@ -185,7 +217,7 @@ def generate_inactivity_report(all_members, rank_rules):
     report_lines = [
         "# 💤 Inactivity Report",
         f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n",
-        "> *In-Game activity is based on XP/Boss KC changes tracked by Wise Old Man.*\n",
+        "> *In-Game activity is based on XP/Boss KC changes tracked by Wise Old Man for clan accounts.*\n",
         f"**Total Fully Inactive Members:** {len(inactive_users)}\n"
     ]
     
@@ -207,17 +239,54 @@ def generate_inactivity_report(all_members, rank_rules):
             w_display = f"{u['wom_days']} Days ({u['wom_active']})" if u['wom_days'] != 9999 else u['wom_active']
             true_days_str = f"{u['true_days']} Days Inactive" if u['true_days'] != 9999 else "Never Active"
             
-            report_lines.append(f"* **{u['discord_name']}** | RSNs: `{u['rsns']}`")
-            report_lines.append(f"  * **{true_days_str}** (Chats & Broadcasts: {d_display} | WOM Updated: {w_display})")
+            header_rsns = f"Clan Account: `{u['clan_rsns']}`"
+            if u['other_rsns']:
+                header_rsns += f" | Other: `{u['other_rsns']}`"
+                
+            report_lines.append(f"* **{u['discord_name']}** | {header_rsns}")
+            report_lines.append(f"  * **{true_days_str}** (Chats & Broadcasts: {d_display} | Clan Account WOM: {w_display})")
+            
+            # If member has multiple linked accounts, show detailed breakdown
+            if len(u['accounts']) > 1:
+                report_lines.append("  * *Linked Accounts Breakdown:*")
+                for acc in u['accounts']:
+                    status_tag = "In Clan" if acc['is_in_clan'] else "Not in Clan"
+                    w_date = acc['wom_date']
+                    w_days = (today - w_date).days if w_date else None
+                    w_str = f"{w_days} Days ago ({w_date.strftime('%Y-%m-%d')})" if w_days is not None else "Unknown"
+                    report_lines.append(f"    * `{acc['rsn']}` [{status_tag}] — WOM Updated: {w_str}")
+                    
             report_lines.append(f"  * *Activity:* 1M: {s.get('chats_1m', 0)}/{s.get('broadcasts_1m', 0)} | 3M: {s.get('chats_3m', 0)}/{s.get('broadcasts_3m', 0)} | 6M: {s.get('chats_6m', 0)}/{s.get('broadcasts_6m', 0)} | Total: {s.get('chats_total', 0)}/{s.get('broadcasts_total', 0)}\n")
 
     append_section("🚨 Fully Inactive Members", "Exceeded inactivity limit across ALL tracked metrics.", inactive_users)
     append_section("⚠️ Potentially Inactive", "Exceeded inactivity limit on ONE metric, but recently active on the other.", potential_users)
 
+    # 6. Generate Rank-Segmented Discord Removal Notices
     if inactive_users:
-        report_lines.append("## 📢 Removal Ping List (Fully Inactive Only)")
+        report_lines.append("## 📢 Discord Removal Notices (Copy & Paste)")
+        report_lines.append("> *Copy and paste the appropriate rank notice directly into Discord.*\n")
+        
+        # Group inactive members by rank (in order)
+        grouped_by_rank = {}
         for u in inactive_users:
-            report_lines.append(f"<@{u['discord_id']}> {u['rsns']}")
+            r = u['rank']
+            if r not in grouped_by_rank:
+                grouped_by_rank[r] = []
+            grouped_by_rank[r].append(u)
+            
+        for rank_name, members_in_rank in grouped_by_rank.items():
+            limit_days = members_in_rank[0]['limit']
+            report_lines.append(f"### {rank_name} (Limit: {limit_days} Days)")
+            report_lines.append("```")
+            report_lines.append("📢 **Inactivity Removal Notice**")
+            report_lines.append("The following accounts are being removed from the clan due to inactivity to make space for new members. When you return, feel free to contact an admin in Discord or guest in the in-game clan for a reinvite! (If you believe this was done in error, please reach out to the admin team).\n")
+            
+            for u in members_in_rank:
+                # Format each in-clan RSN in backticks
+                clan_rsns_formatted = ", ".join(f"`{r.strip()}`" for r in u['clan_rsns'].split(',') if r.strip())
+                report_lines.append(f"<@{u['discord_id']}> {clan_rsns_formatted}")
+                
+            report_lines.append("```\n")
             
     total_flagged = len(inactive_users) + len(potential_users)
     if safe_write_report(output_md, "\n".join(report_lines) + "\n"):

@@ -1,4 +1,6 @@
 import os
+import json
+from datetime import datetime, date
 from loguru import logger
 from constants import SystemFlag, SHARED_DATA_DIR
 from file_utils import safe_write_report
@@ -650,28 +652,47 @@ class MemberAltLimitAudit(BaseAudit):
             max_accounts = parsed_rules[clan_rank].get('max_accounts', 1)
             
         rsns_list = [r.strip() for r in str(member.get('RSNs', 'Unknown')).split(',')]
+        wom_ids_list = [w.strip() for w in str(member.get('WOM IDs', '')).split(',')]
         account_clans = [c.strip() for c in str(member.get('Account Clan', '')).split(',')]
         game_ranks_list = [r.strip() for r in str(member.get('Game Ranks', '')).split(',')]
         
+        wom_activity_map = context.get('wom_activity_map', {})
+        today = datetime.utcnow().date()
+        
         active_accounts = []
         raw_active_rsns = []
+        account_activity_lines = []
         
-        for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list))):
+        for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list), len(wom_ids_list))):
             rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
             clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
             rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
+            wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
             
             if rsn == "Unknown" and clan == "Unknown": continue
             
             if clan.lower() == target_clan_name.lower():
                 active_accounts.append(f"{self.fmt_name(rsn)} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
-                raw_active_rsns.append(f"`{rsn}`")
+                
+                wom_date = wom_activity_map.get(wid) if wid else None
+                if wom_date:
+                    days_ago = (today - wom_date).days
+                    act_str = f"WOM Updated {days_ago} days ago ({wom_date.strftime('%Y-%m-%d')})"
+                    raw_active_rsns.append(f"`{rsn}` (WOM: {days_ago}d ago)")
+                else:
+                    act_str = "WOM Activity Unknown"
+                    raw_active_rsns.append(f"`{rsn}`")
+                    
+                account_activity_lines.append(f">   * {self.fmt_name(rsn)}: {act_str}")
                 
         if len(active_accounts) > max_accounts:
             # Accumulate data for the separate Markdown purge report
             violators_list = context.get('alt_limit_violators')
             report_line = self.build_member_header(member, context, active_accounts) + "\n"
-            report_line += f"> * Limit exceeded: Found {len(active_accounts)} accounts, allowed {max_accounts}\n"            
+            report_line += f"> * Limit exceeded: Found {len(active_accounts)} accounts, allowed {max_accounts}\n"
+            for act_line in account_activity_lines:
+                report_line += f"{act_line}\n"
+                
             if violators_list is not None:
                 violators_list.append({
                     'discord_id': str(member.get('Discord ID', '')).replace("'", "").strip(),
@@ -685,7 +706,7 @@ class MemberAltLimitAudit(BaseAudit):
             return {
                 'flag_to_add': None,
                 'flag_to_remove': None,
-                    'report_line': report_line
+                'report_line': report_line
             }
             
         return {'flag_to_add': None, 'flag_to_remove': None, 'report_line': None}
@@ -817,6 +838,36 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     context['all_req_roles'] = set()
     context['all_members'] = all_members
     context['alt_limit_violators'] = []
+    
+    # Parse WOM cache to get lastChangedAt for in-game activity
+    wom_cache_file = SHARED_DATA_DIR / "caches" / "wom_cache.json"
+    wom_activity_map = {}
+    if wom_cache_file.exists():
+        try:
+            with open(wom_cache_file, 'r', encoding='utf-8') as f:
+                wom_cache = json.load(f)
+            for key, entry in wom_cache.items():
+                if key.startswith("player_") or key.startswith("group_details_"):
+                    data = entry.get("data", {})
+                    if "memberships" in data:
+                        for membership in data.get("memberships", []):
+                            player = membership.get("player", {})
+                            w_id = str(player.get("id"))
+                            last_changed = player.get("lastChangedAt")
+                            if w_id and w_id != 'None' and last_changed:
+                                parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
+                                if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
+                                    wom_activity_map[w_id] = parsed_date
+                    w_id = str(data.get("id"))
+                    last_changed = data.get("lastChangedAt")
+                    if w_id and w_id != 'None' and last_changed:
+                        parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
+                        if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
+                            wom_activity_map[w_id] = parsed_date
+        except Exception as e:
+            logger.error(f"Failed to read WOM cache: {e}")
+            
+    context['wom_activity_map'] = wom_activity_map
     
     banned_members = context.get('banned_members', [])
     context['banned_wom_ids'] = {str(m['wom_id']) for m in banned_members}
