@@ -296,6 +296,7 @@ source_table = "clan_broadcasts"
 broadcast_type = "Clan Expelled"
 group_by_column = "Username"
 aggregations = { Count = "Username" }
+include_leavers = true   # Retain historical kick records even if player left the clan
 
 [[dashboard_settings.leaderboard_reports]]
 report_name = "kicker_summary"
@@ -303,6 +304,7 @@ source_table = "clan_broadcasts"
 broadcast_type = "Clan Expelled"
 group_by_column = "Action_By"
 aggregations = { Count = "Action_By" }
+include_leavers = true   # Retain all admin kick actions historically
 
 [[dashboard_settings.leaderboard_reports]]
 report_name = "stolen_whips_summary"
@@ -336,6 +338,9 @@ aggregations = { Count = "Content" }
 
 # --- Detailed History Reports ---
 # Used for creating tables of individual events for each time period.
+# Options:
+#   include_leavers = true/false (keep events from leavers/inactive players)
+#   use_raw_rsn = true/false (keep exact character name vs resolving to Discord name)
 [[dashboard_settings.detailed_reports]]
 report_name_prefix = "valuable_drops_detail"
 broadcast_types = ["Valuable Drop", "Clue Scroll Item", "Raid Loot"]
@@ -343,10 +348,12 @@ broadcast_types = ["Valuable Drop", "Clue Scroll Item", "Raid Loot"]
 [[dashboard_settings.detailed_reports]]
 report_name_prefix = "pvp_kills_detail"
 broadcast_types = ["PvP Kill"]
+include_leavers = true   # Keep historical PK events
 
 [[dashboard_settings.detailed_reports]]
 report_name_prefix = "pvp_deaths_detail"
 broadcast_types = ["PvP Death"]
+include_leavers = true   # Keep historical PvP deaths
 
 
 # --- Timeseries Reports ---

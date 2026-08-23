@@ -107,18 +107,15 @@ def build_interval_map(roster_payload, buffer_hours, df_all_events):
             
     return interval_map
 
-def apply_mapping(df, interval_map, sync_config):
-    if df.empty:
-        df['Discord_ID'] = None
-        df['Discord_Name'] = None
-        return df
-        
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True, format='mixed')
-    
+def resolve_names_to_discord(names_list, timestamps_list, interval_map, sync_config):
+    """Resolves a list of in-game names and timestamps to Discord IDs and Discord Names using the interval map."""
+    if not names_list:
+        return [], []
+
     # 1. Pre-canonicalize usernames using a lookup dict to avoid redundant string work
-    unique_usernames = df['Username'].dropna().unique()
-    canon_user_map = {u: canonicalize_rsn(u) for u in unique_usernames}
-    
+    unique_names = [n for n in set(names_list) if pd.notna(n)]
+    canon_user_map = {u: canonicalize_rsn(u) for u in unique_names}
+
     # 2. Separate usernames in interval_map into single-interval and multi-interval
     single_interval_map = {}
     multi_interval_map = {}
@@ -132,23 +129,24 @@ def apply_mapping(df, interval_map, sync_config):
     discord_names = []
     t_min = pd.Timestamp.min.tz_localize('UTC')
     t_max = pd.Timestamp.max.tz_localize('UTC')
-    
+
     tolerance_days = sync_config.get("wom_sync_delay_tolerance_days", 35)
     tolerance_delta = pd.Timedelta(days=tolerance_days)
-    
-    # 3. Iterate over zipped lists directly to avoid Pandas iterrows Series overhead
-    usernames = df['Username'].tolist()
-    timestamps = df['Timestamp'].tolist()
-    
-    for username_raw, timestamp in zip(usernames, timestamps):
-        username = canon_user_map.get(username_raw, "")
+
+    for name_raw, timestamp in zip(names_list, timestamps_list):
+        if pd.isna(name_raw):
+            discord_ids.append(None)
+            discord_names.append(None)
+            continue
+
+        username = canon_user_map.get(name_raw, "")
         if not username:
             discord_ids.append(None)
             discord_names.append(None)
             continue
-            
+
         match = None
-        
+
         # Check single-interval map first (almost all cases)
         if username in single_interval_map:
             iv = single_interval_map[username]
@@ -192,16 +190,40 @@ def apply_mapping(df, interval_map, sync_config):
                 current_ivs = [iv for iv in ivs if iv['end'] == t_max]
                 if current_ivs:
                     match = current_ivs[0]
-                    
+
         if match:
             discord_ids.append(match['discord_id'])
             discord_names.append(match['discord_name'])
         else:
             discord_ids.append(None)
             discord_names.append(None)
-            
-    df['Discord_ID'] = discord_ids
-    df['Discord_Name'] = discord_names
+
+    return discord_ids, discord_names
+
+def apply_mapping(df, interval_map, sync_config):
+    if df.empty:
+        df['Discord_ID'] = None
+        df['Discord_Name'] = None
+        return df
+
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce', utc=True, format='mixed')
+    timestamps = df['Timestamp'].tolist()
+
+    if 'Username' in df.columns:
+        df['Discord_ID'], df['Discord_Name'] = resolve_names_to_discord(
+            df['Username'].tolist(), timestamps, interval_map, sync_config
+        )
+
+    if 'Action_By' in df.columns:
+        df['Action_By_Discord_ID'], df['Action_By_Discord_Name'] = resolve_names_to_discord(
+            df['Action_By'].tolist(), timestamps, interval_map, sync_config
+        )
+
+    if 'Opponent' in df.columns:
+        df['Opponent_Discord_ID'], df['Opponent_Discord_Name'] = resolve_names_to_discord(
+            df['Opponent'].tolist(), timestamps, interval_map, sync_config
+        )
+
     return df
 
 def assign_retention_flags(df, last_activity, roster_dict, sync_config):

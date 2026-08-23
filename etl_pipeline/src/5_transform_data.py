@@ -81,29 +81,63 @@ def format_ticks_to_time(ticks):
         return f"{minutes}:{seconds:05.2f}"
 
 def prepare_dataframe(df, use_enriched_db):
-    """Prepares DataFrames by establishing the core Entity and Display Names."""
+    """Prepares DataFrames by establishing the core Entity and Display Names for all player columns."""
     if df.empty: return df
     
-    df['Raw_RSN'] = df['Username']
-    
-    if use_enriched_db:
-        if 'Discord_ID' in df.columns:
-            df['Entity_ID'] = df['Discord_ID'].astype(str).replace(['nan', 'None', ''], pd.NA).fillna(df['Username'])
+    if 'Username' in df.columns:
+        df['Raw_RSN'] = df['Username']
+        if use_enriched_db:
+            if 'Discord_ID' in df.columns:
+                df['Entity_ID'] = df['Discord_ID'].astype(str).replace(['nan', 'None', ''], pd.NA).fillna(df['Username'])
+            else:
+                df['Entity_ID'] = df['Username']
+                
+            if 'Discord_Name' in df.columns:
+                df['Display_Name'] = df['Discord_Name'].replace(['nan', 'None', ''], pd.NA).fillna(df['Username'])
+            else:
+                df['Display_Name'] = df['Username']
         else:
             df['Entity_ID'] = df['Username']
-            
-        if 'Discord_Name' in df.columns:
-            df['Display_Name'] = df['Discord_Name'].replace(['nan', 'None', ''], pd.NA).fillna(df['Username'])
-        else:
             df['Display_Name'] = df['Username']
 
+    if 'Action_By' in df.columns:
+        df['Raw_Action_By'] = df['Action_By']
+        if use_enriched_db:
+            if 'Action_By_Discord_ID' in df.columns:
+                df['Action_By_Entity_ID'] = df['Action_By_Discord_ID'].astype(str).replace(['nan', 'None', ''], pd.NA).fillna(df['Action_By'])
+            else:
+                df['Action_By_Entity_ID'] = df['Action_By']
+
+            if 'Action_By_Discord_Name' in df.columns:
+                df['Action_By_Display_Name'] = df['Action_By_Discord_Name'].replace(['nan', 'None', ''], pd.NA).fillna(df['Action_By'])
+            else:
+                df['Action_By_Display_Name'] = df['Action_By']
+        else:
+            df['Action_By_Entity_ID'] = df['Action_By']
+            df['Action_By_Display_Name'] = df['Action_By']
+
+    if 'Opponent' in df.columns:
+        df['Raw_Opponent'] = df['Opponent']
+        if use_enriched_db:
+            if 'Opponent_Discord_ID' in df.columns:
+                df['Opponent_Entity_ID'] = df['Opponent_Discord_ID'].astype(str).replace(['nan', 'None', ''], pd.NA).fillna(df['Opponent'])
+            else:
+                df['Opponent_Entity_ID'] = df['Opponent']
+
+            if 'Opponent_Discord_Name' in df.columns:
+                df['Opponent_Display_Name'] = df['Opponent_Discord_Name'].replace(['nan', 'None', ''], pd.NA).fillna(df['Opponent'])
+            else:
+                df['Opponent_Display_Name'] = df['Opponent']
+        else:
+            df['Opponent_Entity_ID'] = df['Opponent']
+            df['Opponent_Display_Name'] = df['Opponent']
+
+    if use_enriched_db:
         if 'Is_Retained' not in df.columns:
             df['Is_Retained'] = True
         else:
             df['Is_Retained'] = df['Is_Retained'].fillna(True).astype(bool)
     else:
-        df['Entity_ID'] = df['Username']
-        df['Display_Name'] = df['Username']
         df['Is_Retained'] = True
         
     return df
@@ -264,11 +298,13 @@ def generate_leaderboard_reports(df_chat, df_broadcasts, config, periods, run_wa
             group_by_col = rc['group_by_column']
             original_group_by = group_by_col
             
-            if group_by_col == 'Username':
-                if use_raw_rsn and 'Raw_RSN' in df_filtered.columns:
-                    group_by_col = 'Raw_RSN'
-                elif 'Entity_ID' in df_filtered.columns:
-                    group_by_col = 'Entity_ID'
+            raw_col = f"Raw_{group_by_col}" if group_by_col != "Username" else "Raw_RSN"
+            ent_col = f"{group_by_col}_Entity_ID" if group_by_col != "Username" else "Entity_ID"
+
+            if use_raw_rsn and raw_col in df_filtered.columns:
+                group_by_col = raw_col
+            elif not use_raw_rsn and ent_col in df_filtered.columns:
+                group_by_col = ent_col
 
             aggregations = rc.get('aggregations', {})
             
@@ -306,20 +342,19 @@ def generate_leaderboard_reports(df_chat, df_broadcasts, config, periods, run_wa
                 if 'Count_' in col or 'Value_' in col:
                     df_summary[col] = df_summary[col].fillna(0).astype(int)
             
-            if original_group_by == 'Username':
-                if group_by_col == 'Raw_RSN':
-                    df_summary['Username'] = df_summary['Raw_RSN']
-                    df_summary.drop(columns=['Raw_RSN'], inplace=True)
-                elif group_by_col == 'Entity_ID':
-                    if entity_to_name:
-                        df_summary['Username'] = df_summary['Entity_ID'].map(entity_to_name).fillna(df_summary['Entity_ID'])
-                    else:
-                        df_summary['Username'] = df_summary['Entity_ID']
-                    df_summary.drop(columns=['Entity_ID'], inplace=True)
-                    
-                if 'Username' in df_summary.columns:
-                    cols = ['Username'] + [c for c in df_summary.columns if c != 'Username']
-                    df_summary = df_summary[cols]
+            if group_by_col == raw_col and raw_col in df_summary.columns:
+                df_summary[original_group_by] = df_summary[raw_col]
+                df_summary.drop(columns=[raw_col], inplace=True)
+            elif group_by_col == ent_col and ent_col in df_summary.columns:
+                if entity_to_name:
+                    df_summary[original_group_by] = df_summary[ent_col].map(entity_to_name).fillna(df_summary[ent_col])
+                else:
+                    df_summary[original_group_by] = df_summary[ent_col]
+                df_summary.drop(columns=[ent_col], inplace=True)
+                
+            if original_group_by in df_summary.columns:
+                cols = [original_group_by] + [c for c in df_summary.columns if c != original_group_by]
+                df_summary = df_summary[cols]
 
             reports[name] = df_summary
             logger.info(f"--> Generated leaderboard report '{name}' with {len(df_summary)} entries.")
@@ -347,8 +382,13 @@ def generate_detailed_reports(df_broadcasts, config, periods, run_warnings, glob
                 df_filtered = df_filtered[df_filtered['Is_Retained']]
                 
             use_raw_rsn = rc.get('use_raw_rsn', False)
-            if use_raw_rsn and 'Raw_RSN' in df_filtered.columns:
-                df_filtered['Username'] = df_filtered['Raw_RSN']
+            if use_raw_rsn:
+                if 'Raw_RSN' in df_filtered.columns:
+                    df_filtered['Username'] = df_filtered['Raw_RSN']
+                if 'Raw_Action_By' in df_filtered.columns:
+                    df_filtered['Action_By'] = df_filtered['Raw_Action_By']
+                if 'Raw_Opponent' in df_filtered.columns:
+                    df_filtered['Opponent'] = df_filtered['Raw_Opponent']
             
             if not df_filtered.empty:
                 if 'Item_Value' in df_filtered.columns:
@@ -1093,12 +1133,18 @@ def main():
 
         entity_to_name = {}
         for df in [df_broadcasts, df_chat]:
-            if not df.empty and 'Entity_ID' in df.columns and 'Display_Name' in df.columns:
-                valid_df = df.dropna(subset=['Entity_ID', 'Display_Name'])
-                entity_to_name.update(dict(zip(valid_df['Entity_ID'], valid_df['Display_Name'])))
+            if not df.empty:
+                for ent_col, name_col in [('Entity_ID', 'Display_Name'),
+                                          ('Action_By_Entity_ID', 'Action_By_Display_Name'),
+                                          ('Opponent_Entity_ID', 'Opponent_Display_Name')]:
+                    if ent_col in df.columns and name_col in df.columns:
+                        valid_df = df.dropna(subset=[ent_col, name_col])
+                        entity_to_name.update(dict(zip(valid_df[ent_col], valid_df[name_col])))
                 
-        # Overwrite standard 'Username' column so downstream views pick up Display_Name effortlessly
+        # Overwrite player columns with resolved Display Names for downstream views
         if 'Display_Name' in df_broadcasts.columns: df_broadcasts['Username'] = df_broadcasts['Display_Name']
+        if 'Action_By_Display_Name' in df_broadcasts.columns: df_broadcasts['Action_By'] = df_broadcasts['Action_By_Display_Name']
+        if 'Opponent_Display_Name' in df_broadcasts.columns: df_broadcasts['Opponent'] = df_broadcasts['Opponent_Display_Name']
         if 'Display_Name' in df_chat.columns: df_chat['Username'] = df_chat['Display_Name']
 
         all_reports = {}
