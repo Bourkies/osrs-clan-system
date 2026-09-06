@@ -33,3 +33,4 @@ shared_data/*.lock
 
 # local Dev files
 monorepo_transition_plan.md
+Bingo_ranking/*

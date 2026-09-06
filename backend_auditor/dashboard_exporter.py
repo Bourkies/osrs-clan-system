@@ -48,7 +48,7 @@ def generate_dashboard_export(roster_data, history_db_path=None, output_path=Non
 
     if Path(history_db_path).exists():
         try:
-            conn = sqlite3.connect(history_db_path)
+            conn = sqlite3.connect(history_db_path, timeout=30.0)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 

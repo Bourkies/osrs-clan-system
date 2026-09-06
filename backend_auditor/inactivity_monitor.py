@@ -34,7 +34,7 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
     # 2. Fetch rolling activity stats in a single fast query
     activity_stats = {}
     try:
-        conn = sqlite3.connect(input_db)
+        conn = sqlite3.connect(input_db, timeout=30.0)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         

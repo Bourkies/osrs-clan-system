@@ -82,11 +82,17 @@ def release_lock():
 
 def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, sync_only=False):
     logger.info("Initializing Orchestrator...")
+    logger.info("Connecting to Google Sheets API...")
     db = DBManager(SPREADSHEET_ID)
+    logger.success("Connected to Google Sheets.")
+
+    logger.info(f"Opening local SQLite database ({SHARED_DATA_DIR / 'databases' / 'history.db'})...")
     sqlite_mgr = SQLiteManager(SHARED_DATA_DIR / "databases" / "history.db")
+    logger.success("SQLite database verified.")
     
     # Execute Daily Backup Policy
     retention = os.getenv('BACKUP_RETENTION_DAYS', 30)
+    logger.info("Checking daily backup policy...")
     backup_manager.run_backup(db, retention_days=retention)
 
     wom = WomClient()

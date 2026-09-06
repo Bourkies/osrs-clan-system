@@ -192,7 +192,7 @@ def generate_suggestions(roster_data=None, rank_rules=None):
 
     logger.info(f"Reading aggregated activity data from {input_db}...")
     try:
-        conn = sqlite3.connect(input_db)
+        conn = sqlite3.connect(input_db, timeout=30.0)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         

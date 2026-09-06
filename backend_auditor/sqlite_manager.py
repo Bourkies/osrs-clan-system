@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import time
 from datetime import datetime
 from loguru import logger
 
@@ -8,10 +9,23 @@ class SQLiteManager:
         self.db_path = db_path
         self._setup_database()
 
-    def _get_connection(self):
+    def _get_connection(self, timeout=30.0, max_retries=3, retry_delay=3):
         # Ensure the data directory exists
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        return sqlite3.connect(self.db_path)
+        retries = 0
+        while True:
+            try:
+                return sqlite3.connect(self.db_path, timeout=timeout)
+            except sqlite3.OperationalError as e:
+                retries += 1
+                if "locked" in str(e).lower() or "busy" in str(e).lower():
+                    if retries > max_retries:
+                        logger.error(f"Max retries reached connecting to {os.path.basename(self.db_path)}. Failing.")
+                        raise
+                    logger.warning(f"Database '{os.path.basename(self.db_path)}' is busy or locked. Retrying in {retry_delay}s ({retries}/{max_retries})...")
+                    time.sleep(retry_delay)
+                else:
+                    raise
 
     def _setup_database(self):
         with self._get_connection() as conn:
