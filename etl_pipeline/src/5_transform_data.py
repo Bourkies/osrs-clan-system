@@ -15,7 +15,8 @@ from loguru import logger
 from shared_utils import (
     load_config, get_db_engine, DATA_DIR, SHARED_CONFIG_DIR,
     PROJECT_ROOT, BASE_DIR, get_time_periods,
-    validate_mapping_rules, apply_manual_name_mappings, finish_script
+    validate_mapping_rules, apply_manual_name_mappings, 
+    apply_discord_name_overrides, finish_script
 )
 from loguru_setup import loguru_setup
 
@@ -1115,6 +1116,9 @@ def main():
                 try:
                     with open(roster_file, 'r', encoding='utf-8') as f:
                         r_payload = json.load(f)
+                        discord_overrides = config.get('discord_name_overrides', {})
+                        if discord_overrides:
+                            r_payload = apply_discord_name_overrides(r_payload, discord_overrides)
                         for user in r_payload.get('members', []):
                             did = str(user.get('discord_id', '')).replace("'", "")
                             sys_flags = user.get('system_flags', [])

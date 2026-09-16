@@ -136,6 +136,19 @@ rules = [
 ]
 
 #-----------------------------------------------------------------------
+# Discord Name Overrides
+#-----------------------------------------------------------------------
+# Override the Discord display name attached to a user's accounts during roster enrichment.
+# All accounts linked to this Discord ID will roll up under this preferred name in the
+# enriched database and downstream dashboards.
+#
+# Format:
+#   "<discord_id>" = "Preferred Name"
+[discord_name_overrides]
+# "123456789012345678" = "Bourkie"
+# "987654321098765432" = "MainAccountName"
+
+#-----------------------------------------------------------------------
 # Exclusion Settings (Temporary Game Modes)
 #-----------------------------------------------------------------------
 # Exclude specific data types within time ranges (e.g. for Deadman Mode or Leagues)

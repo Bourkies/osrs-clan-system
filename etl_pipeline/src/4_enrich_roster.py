@@ -5,7 +5,10 @@ from datetime import timedelta
 from loguru import logger
 from sqlalchemy import text
 
-from shared_utils import load_config, get_db_engine, BASE_DIR, DATA_DIR, apply_manual_name_mappings, finish_script
+from shared_utils import (
+    load_config, get_db_engine, BASE_DIR, DATA_DIR, 
+    apply_manual_name_mappings, apply_discord_name_overrides, finish_script
+)
 from loguru_setup import loguru_setup
 
 SCRIPT_NAME = "4_enrich_roster"
@@ -305,6 +308,11 @@ def main():
             if m.get('discord_id'):
                 m['discord_id'] = str(m['discord_id']).replace("'", "")
                 
+        # Apply Discord name overrides from config
+        discord_overrides = config.get('discord_name_overrides', {})
+        if discord_overrides:
+            roster_payload = apply_discord_name_overrides(roster_payload, discord_overrides)
+
         roster_dict = {m['discord_id']: m for m in roster_payload.get('members', [])}
         logger.info(f"Loaded {len(roster_dict)} members from JSON.")
         

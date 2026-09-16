@@ -258,3 +258,48 @@ def apply_manual_name_mappings(df, rules, username_columns):
                     df_copy.loc[combined_mask, col] = target_name
     
     return df_copy
+
+
+def apply_discord_name_overrides(roster_payload: dict, overrides: dict) -> dict:
+    """
+    Applies overrides to member discord names in a roster payload strictly by Discord ID.
+    
+    Args:
+        roster_payload: The dictionary containing a 'members' list loaded from roster_export.json.
+        overrides: Dict mapping Discord ID to preferred override display name (from config.toml).
+        
+    Returns:
+        The updated roster_payload with overridden discord_name values.
+    """
+    if not overrides or not roster_payload or "members" not in roster_payload:
+        return roster_payload
+
+    # Normalize override keys to sanitized string representation of Discord IDs
+    normalized_overrides = {}
+    for k, v in overrides.items():
+        if v is None:
+            continue
+        clean_key = str(k).strip().replace("'", "").replace('"', '')
+        clean_val = str(v).strip()
+        if clean_key and clean_val:
+            normalized_overrides[clean_key] = clean_val
+
+    if not normalized_overrides:
+        return roster_payload
+
+    applied_count = 0
+    for member in roster_payload.get("members", []):
+        raw_id = member.get("discord_id")
+        if raw_id:
+            clean_id = str(raw_id).strip().replace("'", "").replace('"', '')
+            if clean_id in normalized_overrides:
+                old_name = member.get("discord_name", "")
+                override_name = normalized_overrides[clean_id]
+                member["discord_name"] = override_name
+                applied_count += 1
+                logger.debug(f"Applied Discord name override for ID {clean_id}: '{old_name}' -> '{override_name}'")
+
+    if applied_count > 0:
+        logger.info(f"Applied {applied_count} Discord name override(s) from config.")
+
+    return roster_payload

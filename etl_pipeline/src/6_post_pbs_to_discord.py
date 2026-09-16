@@ -14,7 +14,7 @@ except ImportError:
 
 from shared_utils import (
     load_config, PROJECT_ROOT, get_db_engine, DATA_DIR, STATES_DIR, SHARED_CONFIG_DIR, SECRETS_PATH,
-    finish_script
+    apply_discord_name_overrides, finish_script
 )
 from loguru_setup import loguru_setup
 
@@ -459,6 +459,9 @@ async def main():
                 try:
                     with open(roster_file, 'r', encoding='utf-8') as f:
                         roster_payload = json.load(f)
+                        discord_overrides = config.get('discord_name_overrides', {})
+                        if discord_overrides:
+                            roster_payload = apply_discord_name_overrides(roster_payload, discord_overrides)
                         for user in roster_payload.get('members', []):
                             d_name = user.get('discord_name')
                             d_id = user.get('discord_id')
