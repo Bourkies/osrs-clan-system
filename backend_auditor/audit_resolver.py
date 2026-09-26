@@ -36,6 +36,87 @@ def modify_flags(current_str, add_flags=None, remove_flags=None):
                 flags.remove(f)
     return ", ".join(flags) if flags else ""
 
+def compute_rank_suggestions(member, valid_ranks, discord_req_to_rank, ig_main_to_rank, rank_to_exc_roles, role_map, target_clan_name):
+    d_ranks_raw = [r.strip().replace("'", "") for r in str(member.get('Discord Ranks', '')).split(',') if r.strip()]
+    
+    clans_list = [c.strip() for c in str(member.get('Account Clan', '')).split(',') if c.strip()]
+    ranks_list = [rk.strip() for rk in str(member.get('Game Ranks', '')).split(',') if rk.strip()]
+    
+    target_game_ranks = []
+    for idx, clan in enumerate(clans_list):
+        if clan.lower() == target_clan_name.lower():
+            if idx < len(ranks_list):
+                rk = ranks_list[idx]
+                if rk and rk != 'Unknown':
+                    target_game_ranks.append(rk)
+                    
+    if not target_game_ranks:
+        target_game_ranks = [rk for rk in ranks_list if rk and rk != 'Unknown']
+
+    suggestions = set()
+    reasons = {}
+    invalid_ranks = set()
+
+    for dr in d_ranks_raw:
+        if dr in discord_req_to_rank:
+            for cr in discord_req_to_rank[dr]:
+                suggestions.add(cr)
+                role_name = role_map.get(dr, f"Role ID: {dr}")
+                reasons.setdefault(cr, []).append(f"Discord Req '{role_name}'")
+
+        for cr in valid_ranks:
+            if dr in rank_to_exc_roles.get(cr, []):
+                invalid_ranks.add(cr)
+
+    for ir in target_game_ranks:
+        if ir.lower() in ig_main_to_rank:
+            for cr in ig_main_to_rank[ir.lower()]:
+                suggestions.add(cr)
+                reasons.setdefault(cr, []).append(f"Main In-Game '{ir}'")
+
+    suggestions = suggestions - invalid_ranks
+
+    perfect_matches = {
+        r for r in suggestions 
+        if any("Discord Req" in res for res in reasons.get(r, [])) 
+        and any("Main In-Game" in res for res in reasons.get(r, []))
+    }
+    if perfect_matches:
+        suggestions = perfect_matches
+
+    sorted_suggestions = [r for r in valid_ranks if r in suggestions]
+    return sorted_suggestions, reasons
+
+def prompt_rank_picker(valid_ranks, suggestions, reasons):
+    print(f"\n{CYAN}--- Clan Rank Selector ---{RESET}")
+    print(f"  0: ↩️  Cancel / Back")
+    choice_map = {}
+    current_choice = 1
+
+    # Suggestions first
+    for rank in valid_ranks:
+        if rank in suggestions:
+            reason_str = f" {DARK_GRAY}(Matches: {', '.join(dict.fromkeys(reasons[rank]))}){RESET}"
+            print(f"  {current_choice}: {YELLOW}⭐ {rank}{RESET}{reason_str}")
+            choice_map[current_choice] = rank
+            current_choice += 1
+
+    # Remaining valid ranks
+    for rank in valid_ranks:
+        if rank not in suggestions:
+            print(f"  {current_choice}:    {rank}")
+            choice_map[current_choice] = rank
+            current_choice += 1
+
+    while True:
+        choice = input(f"\nSelect rank [0-{len(valid_ranks)}] or 'c' to cancel: ").strip().lower()
+        if choice in ['0', 'c']:
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(valid_ranks):
+            return choice_map[int(choice)]
+        print(f"{RED}Invalid input. Please enter a number between 0 and {len(valid_ranks)}.{RESET}")
+
+
 def print_member_details(member, role_map, managed_roles, active_issues=None):
     d_name = str(member.get('Discord Name', '')).strip()
     d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
@@ -96,16 +177,30 @@ def main():
 
     print("Loading Reference Data mapping...")
     ref_records = db.get_all_records('Reference_Data')
+    valid_ranks = []
+    discord_req_to_rank = {}
+    ig_main_to_rank = {}
+    rank_to_exc_roles = {}
     managed_roles = set()
     all_req_roles = set()
     for row in ref_records:
         clan_rank = str(row.get('Clan Rank', '')).strip()
         if not clan_rank:
             continue
+        valid_ranks.append(clan_rank)
         req_roles = [r.strip() for r in str(row.get('Required Discord Roles', '')).split(',') if r.strip()]
         all_req_roles.update(req_roles)
         all_roles = [r.strip() for r in str(row.get('Allowed Discord Roles', '')).split(',') if r.strip()]
         exc_roles = [r.strip() for r in str(row.get('Excluded Discord Roles', '')).split(',') if r.strip()]
+        main_rank = str(row.get('Main In-Game Rank', '')).strip()
+
+        for dr in req_roles:
+            discord_req_to_rank.setdefault(dr, []).append(clan_rank)
+
+        if main_rank:
+            ig_main_to_rank.setdefault(main_rank.lower(), []).append(clan_rank)
+
+        rank_to_exc_roles[clan_rank] = exc_roles
         managed_roles.update(req_roles + all_roles + exc_roles)
 
     print("Loading Discord Roles mapping...")
@@ -312,61 +407,106 @@ def main():
                         "label": "Clear Sheet Rank (Archives member on next run)",
                         "clear_sheet_rank": True
                     })
-                
-                print(f"\nSelect action for {GREEN}{member.get('Discord Name')}{RESET} (Progress: {idx}/{len(members_list)}):")
-                action_map = {}
-                for act_idx, action in enumerate(member_actions, 1):
-                    print(f"  {act_idx}: {action['label']}")
-                    action_map[act_idx] = action
-                print(f"  0: ⏭️  Skip / No Action")
-                
+
+                if cat_id == 5:
+                    suggestions, reasons = compute_rank_suggestions(
+                        member, valid_ranks, discord_req_to_rank, ig_main_to_rank,
+                        rank_to_exc_roles, role_map, target_clan_name
+                    )
+                    rank_actions = []
+                    for rank in suggestions[:2]:
+                        reason_summary = ", ".join(dict.fromkeys(reasons.get(rank, [])))
+                        rank_actions.append({
+                            "label": f"🎯 Update Sheet Rank to '{rank}' ⭐ {DARK_GRAY}(Matches: {reason_summary}){RESET}",
+                            "set_sheet_rank": rank
+                        })
+                    rank_actions.append({
+                        "label": "📝 Choose a different Sheet Rank (Rank Picker)..." if suggestions else "📝 Update Sheet Rank (Rank Picker)...",
+                        "pick_rank": True,
+                        "suggestions": suggestions,
+                        "reasons": reasons
+                    })
+                    member_actions = rank_actions + member_actions
+
+                quit_category = False
                 while True:
-                    act_choice = input(f"Select [0-{len(member_actions)}] or 'q' to return to menu: ").strip().lower()
-                    if act_choice == 'q':
-                        break
-                    if act_choice.isdigit() and 0 <= int(act_choice) <= len(member_actions):
-                        act_choice = int(act_choice)
-                        break
-                    print(f"{RED}Invalid input.{RESET}")
+                    print(f"\nSelect action for {GREEN}{member.get('Discord Name')}{RESET} (Progress: {idx}/{len(members_list)}):")
+                    action_map = {}
+                    for act_idx, action in enumerate(member_actions, 1):
+                        print(f"  {act_idx}: {action['label']}")
+                        action_map[act_idx] = action
+                    print(f"  0: ⏭️  Skip / No Action")
                     
-                if act_choice == 'q':
-                    print(f"{YELLOW}Returning to main menu...{RESET}")
-                    break
-                    
-                if act_choice == 0:
-                    print(f"{YELLOW}Skipped member.{RESET}")
-                    continue
-                    
-                selected_action = action_map[act_choice]
-                current_admin_flags = str(member.get('Admin Flags', ''))
-                d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
-                d_name = str(member.get('Discord Name', '')).strip()
-                
-                updates_for_member = []
-                action_desc_parts = []
-                
-                if selected_action.get('clear_sheet_rank'):
-                    updates_for_member.append({'id': d_id, 'col_name': 'Clan Rank', 'value': ''})
-                    member['Clan Rank'] = ''
-                    action_desc_parts.append("Cleared Clan Rank")
-                
-                if selected_action.get('add') or selected_action.get('remove'):
-                    new_admin_flags = modify_flags(current_admin_flags, add_flags=selected_action.get('add'), remove_flags=selected_action.get('remove'))
-                    updates_for_member.append({'id': d_id, 'col_name': 'Admin Flags', 'value': new_admin_flags})
-                    member['Admin Flags'] = new_admin_flags
-                    
-                    if selected_action.get('add'):
-                        action_desc_parts.append(f"Added Admin Flag(s): {', '.join(selected_action.get('add'))}")
-                    if selected_action.get('remove'):
-                        action_desc_parts.append(f"Removed Admin Flag(s): {', '.join(selected_action.get('remove'))}")
+                    while True:
+                        act_choice = input(f"Select [0-{len(member_actions)}] or 'q' to return to menu: ").strip().lower()
+                        if act_choice == 'q':
+                            quit_category = True
+                            break
+                        if act_choice.isdigit() and 0 <= int(act_choice) <= len(member_actions):
+                            act_choice = int(act_choice)
+                            break
+                        print(f"{RED}Invalid input.{RESET}")
                         
-                for u in updates_for_member:
-                    batch_updates.append(u)
+                    if quit_category:
+                        print(f"{YELLOW}Returning to main menu...{RESET}")
+                        break
+                        
+                    if act_choice == 0:
+                        print(f"{YELLOW}Skipped member.{RESET}")
+                        break
+                        
+                    selected_action = action_map[act_choice]
                     
-                action_desc = " and ".join(action_desc_parts)
-                msg = f"Manual Update - {d_name} ({d_id}): {action_desc}."
-                audit_logs.append(msg)
-                print(f"{GREEN}Queued: {action_desc}{RESET}")
+                    if selected_action.get('pick_rank'):
+                        picked = prompt_rank_picker(valid_ranks, selected_action['suggestions'], selected_action['reasons'])
+                        if not picked:
+                            print(f"{YELLOW}Rank selection canceled.{RESET}")
+                            continue
+                        selected_action = {'set_sheet_rank': picked}
+                        
+                    current_admin_flags = str(member.get('Admin Flags', ''))
+                    d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
+                    d_name = str(member.get('Discord Name', '')).strip()
+                    
+                    updates_for_member = []
+                    action_desc_parts = []
+                    
+                    if selected_action.get('set_sheet_rank'):
+                        new_rank = selected_action['set_sheet_rank']
+                        old_rank = str(member.get('Clan Rank', '')).strip()
+                        updates_for_member.append({'id': d_id, 'col_name': 'Clan Rank', 'value': new_rank})
+                        member['Clan Rank'] = new_rank
+                        if old_rank and old_rank != 'None':
+                            action_desc_parts.append(f"Updated Clan Rank from '{old_rank}' to '{new_rank}'")
+                        else:
+                            action_desc_parts.append(f"Assigned Clan Rank '{new_rank}'")
+                    
+                    if selected_action.get('clear_sheet_rank'):
+                        updates_for_member.append({'id': d_id, 'col_name': 'Clan Rank', 'value': ''})
+                        member['Clan Rank'] = ''
+                        action_desc_parts.append("Cleared Clan Rank")
+                    
+                    if selected_action.get('add') or selected_action.get('remove'):
+                        new_admin_flags = modify_flags(current_admin_flags, add_flags=selected_action.get('add'), remove_flags=selected_action.get('remove'))
+                        updates_for_member.append({'id': d_id, 'col_name': 'Admin Flags', 'value': new_admin_flags})
+                        member['Admin Flags'] = new_admin_flags
+                        
+                        if selected_action.get('add'):
+                            action_desc_parts.append(f"Added Admin Flag(s): {', '.join(selected_action.get('add'))}")
+                        if selected_action.get('remove'):
+                            action_desc_parts.append(f"Removed Admin Flag(s): {', '.join(selected_action.get('remove'))}")
+                            
+                    for u in updates_for_member:
+                        batch_updates.append(u)
+                        
+                    action_desc = " and ".join(action_desc_parts)
+                    msg = f"Manual Update - {d_name} ({d_id}): {action_desc}."
+                    audit_logs.append(msg)
+                    print(f"{GREEN}Queued: {action_desc}{RESET}")
+                    break
+
+                if quit_category:
+                    break
 
 if __name__ == '__main__':
     main()
