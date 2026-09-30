@@ -20,6 +20,7 @@ import backup_manager
 import activity_reporter
 import rank_up_suggester
 import inactivity_monitor
+import file_utils
 
 load_dotenv(SHARED_SECRETS_DIR / ".env")
 
@@ -141,10 +142,21 @@ def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, s
     db.append_audit_logs(audit_logs)
 
     if not sync_only:
-        webhook.save_full_report(report_sections)
+        # Construct reporting metadata for headers (clan name and in-game member count)
+        group_member_count = audit_context.get('group_member_count', 0)
+        if not group_member_count:
+            _, _, group_member_count = file_utils.load_wom_cache_maps()
+
+        report_metadata = {
+            'clan_name': target_clan_name if target_clan_name != 'Unknown Clan' else None,
+            'member_count': group_member_count,
+            'max_capacity': 500
+        }
+
+        webhook.save_full_report(report_sections, metadata=report_metadata)
 
     if not skip_webhook and not sync_only:
-        webhook.send_report(report_sections)
+        webhook.send_report(report_sections, metadata=report_metadata)
         
     if not sync_only:
         # Export the Roster to JSON for the ELT Dashboard pipeline

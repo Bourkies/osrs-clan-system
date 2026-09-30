@@ -79,7 +79,32 @@ class WebhookManager:
 
         return text
 
-    def send_report(self, sections):
+    def _format_header(self, date_str_or_time, is_discord=False, metadata=None):
+        meta_lines = []
+        if metadata:
+            clan_name = metadata.get('clan_name')
+            member_count = metadata.get('member_count')
+            max_cap = metadata.get('max_capacity', 500)
+            
+            parts = []
+            if clan_name and clan_name != 'Unknown Clan':
+                parts.append(f"**Clan:** {clan_name}")
+            if member_count:
+                parts.append(f"**In-Game Members:** {member_count} / {max_cap}")
+            if parts:
+                meta_lines.append(" • ".join(parts))
+
+        time_line = f"<t:{date_str_or_time}:F>" if is_discord else f"**Generated:** {date_str_or_time}"
+        meta_lines.append(time_line)
+        
+        meta_block = "\n".join(meta_lines)
+        return (
+            f"# ⚠️ Daily Clan Audit Report\n"
+            f"{meta_block}\n"
+            f"_Note: In-game changes (rank updates, leaving/joining) can take up to a few days to propagate to the spreadsheet._\n\n"
+        )
+
+    def send_report(self, sections, metadata=None):
         if not self.webhook_url:
             logger.info("No Discord Webhook URL configured. Skipping report.")
             return
@@ -89,7 +114,7 @@ class WebhookManager:
             
         embeds = []
         current_time = int(time.time())
-        current_desc = f"# ⚠️ Daily Clan Audit Report \n<t:{current_time}:F>\n_Note: In-game changes (rank updates, leaving/joining) can take up to a few days to propagate to the spreadsheet._\n\n"
+        current_desc = self._format_header(current_time, is_discord=True, metadata=metadata)
         run_color = self._get_next_color()
         
         def add_text(text):
@@ -150,7 +175,7 @@ class WebhookManager:
                 logger.success(f"Sent Discord Webhook Report chunk {i//3 + 1}/{(len(embeds)-1)//3 + 1}.")
             time.sleep(1)
 
-    def save_full_report(self, sections, filepath=None):
+    def save_full_report(self, sections, filepath=None, metadata=None):
         """Saves the complete, untruncated audit report to a local Markdown file."""
         if not sections:
             return
@@ -161,7 +186,7 @@ class WebhookManager:
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
         date_str = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
-        md_content = f"# ⚠️ Daily Clan Audit Report\n**Generated:** {date_str}\n_Note: In-game changes (rank updates, leaving/joining) can take up to a few days to propagate to the spreadsheet._\n\n"
+        md_content = self._format_header(date_str, is_discord=False, metadata=metadata)
         
         for section in sections:
             title = section.get('title', 'Unknown Section')
