@@ -120,7 +120,7 @@ def get_highest_rank(ranks_str):
 
 def generate_suggestions(roster_data=None, rank_rules=None):
     logger.info("Starting Clan Rank-Up Suggester...")
-    _, wom_type_map = load_wom_cache_maps()
+    _, wom_type_map, _ = load_wom_cache_maps()
     input_db = SHARED_DATA_DIR / "databases" / "activity.db"
     output_md = SHARED_DATA_DIR / "reports" / "rank_up_suggestions.md"
     

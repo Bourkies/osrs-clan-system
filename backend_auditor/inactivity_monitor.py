@@ -7,15 +7,16 @@ from loguru import logger
 from constants import SHARED_DATA_DIR, SystemFlag
 from file_utils import safe_write_report, load_wom_cache_maps, get_account_type_tag
 
-def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osrs"):
-    logger.info(f"Starting Clan Inactivity Monitor for target clan '{target_clan_name}'...")
-    input_db = SHARED_DATA_DIR / "databases" / "activity.db"
-    output_md = SHARED_DATA_DIR / "reports" / "inactivity_report.md"
-    
-    if not input_db.exists():
-        logger.warning(f"Database not found at {input_db}. Skipping inactivity report.")
-        return
-        
+def evaluate_inactivity(all_members, rank_rules, target_clan_name="Au Osrs", wom_activity_map=None, wom_type_map=None, activity_db=None):
+    """
+    Evaluates all members against inactivity rules.
+    Returns: (inactive_users, potential_users, rank_order)
+    """
+    input_db = activity_db or (SHARED_DATA_DIR / "databases" / "activity.db")
+    if not Path(input_db).exists():
+        logger.warning(f"Database not found at {input_db}. Skipping inactivity evaluation.")
+        return [], [], []
+
     # 1. Parse Max Inactive Days configuration
     max_inactive_map = {}
     rank_order = []
@@ -60,10 +61,11 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
         conn.close()
     except Exception as e:
         logger.error(f"Failed to query {input_db}: {e}")
-        return
+        return [], [], rank_order
         
-    # 3. Parse WOM cache to get lastChangedAt and player type for in-game activity
-    wom_activity_map, wom_type_map = load_wom_cache_maps()
+    # 3. Parse WOM cache if not passed in
+    if wom_activity_map is None or wom_type_map is None:
+        wom_activity_map, wom_type_map, _ = load_wom_cache_maps()
 
     # 4. Evaluate Members
     today = datetime.utcnow().date()
@@ -160,6 +162,7 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
                 'clan_rsns': clan_rsns_str,
                 'other_rsns': other_rsns_str,
                 'accounts': accounts,
+                'clan_accounts': clan_accounts,
                 'rank': clan_rank,
                 'discord_days': discord_days,
                 'wom_days': wom_days,
@@ -181,10 +184,24 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
         
     inactive_users.sort(key=sort_key)
     potential_users.sort(key=sort_key)
+
+    return inactive_users, potential_users, rank_order
+
+def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osrs"):
+    logger.info(f"Starting Clan Inactivity Monitor for target clan '{target_clan_name}'...")
+    output_md = SHARED_DATA_DIR / "reports" / "inactivity_report.md"
+    
+    inactive_users, potential_users, rank_order = evaluate_inactivity(
+        all_members, rank_rules, target_clan_name=target_clan_name
+    )
+    if not inactive_users and not potential_users:
+        logger.info("No inactive users found or activity db missing.")
+        return
     
     # 5. Generate Markdown Report
     os.makedirs(output_md.parent, exist_ok=True)
     
+    today = datetime.utcnow().date()
     report_lines = [
         "# 💤 Inactivity Report",
         f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n",

@@ -69,6 +69,7 @@ def load_wom_cache_maps(cache_file=None):
     Parses wom_cache.json to extract:
     - wom_activity_map: {w_id: latest_date}
     - wom_type_map: {w_id: player_type}
+    - group_member_count: int (highest memberCount found in group_details)
     """
     from datetime import datetime
     from constants import SHARED_DATA_DIR
@@ -78,15 +79,24 @@ def load_wom_cache_maps(cache_file=None):
     cache_path = Path(cache_file)
     wom_activity_map = {}
     wom_type_map = {}
+    group_member_count = 0
 
     if not cache_path.exists():
-        return wom_activity_map, wom_type_map
+        return wom_activity_map, wom_type_map, group_member_count
 
     try:
         with open(cache_path, 'r', encoding='utf-8') as f:
             wom_cache = json.load(f)
 
         for key, entry in wom_cache.items():
+            if key.startswith("group_details_"):
+                g_data = entry.get("data", {})
+                m_count = g_data.get("memberCount")
+                if m_count:
+                    group_member_count = max(group_member_count, int(m_count))
+                elif "memberships" in g_data:
+                    group_member_count = max(group_member_count, len(g_data["memberships"]))
+
             if key.startswith("player_") or key.startswith("group_details_"):
                 data = entry.get("data", {})
                 if "memberships" in data:
@@ -121,4 +131,4 @@ def load_wom_cache_maps(cache_file=None):
     except Exception as e:
         logger.error(f"Failed to read WOM cache: {e}")
 
-    return wom_activity_map, wom_type_map
+    return wom_activity_map, wom_type_map, group_member_count

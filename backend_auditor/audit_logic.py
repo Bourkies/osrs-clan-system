@@ -687,6 +687,7 @@ class MemberAltLimitAudit(BaseAudit):
         active_accounts = []
         raw_active_rsns = []
         account_activity_lines = []
+        accounts_details = []
         
         for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list), len(wom_ids_list))):
             rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
@@ -701,8 +702,8 @@ class MemberAltLimitAudit(BaseAudit):
                 active_accounts.append(f"{self.fmt_name(rsn)}{type_tag} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
                 
                 wom_date = wom_activity_map.get(wid) if wid else None
+                days_ago = (today - wom_date).days if wom_date else 9999
                 if wom_date:
-                    days_ago = (today - wom_date).days
                     act_str = f"WOM Updated {days_ago} days ago ({wom_date.strftime('%Y-%m-%d')})"
                     raw_active_rsns.append(f"`{rsn}`{type_tag} (WOM: {days_ago}d ago)")
                 else:
@@ -710,6 +711,13 @@ class MemberAltLimitAudit(BaseAudit):
                     raw_active_rsns.append(f"`{rsn}`{type_tag}")
                     
                 account_activity_lines.append(f">   * {self.fmt_name(rsn)}{type_tag}: {act_str}")
+                accounts_details.append({
+                    'rsn': rsn,
+                    'wid': wid,
+                    'type_tag': type_tag,
+                    'rank': rank,
+                    'days_ago': days_ago
+                })
                 
         if len(active_accounts) > max_accounts:
             # Accumulate data for the separate Markdown purge report
@@ -726,6 +734,7 @@ class MemberAltLimitAudit(BaseAudit):
                     'clan_rank': clan_rank,
                     'max_accounts': max_accounts,
                     'raw_active_rsns': raw_active_rsns,
+                    'accounts_details': accounts_details,
                     'report_line': report_line
                 })
             
@@ -736,6 +745,177 @@ class MemberAltLimitAudit(BaseAudit):
             }
             
         return {'flag_to_add': None, 'flag_to_remove': None, 'report_line': None}
+
+
+class ClanCapacityRemovalAudit(BaseAudit):
+    title = '🚨 Recommended Capacity Removals'
+    description = "Prioritized account removals to maintain clan recruitment buffer when near 500 capacity. Evaluates inactive members and excess alts by violation severity."
+    type = 'global'
+    enable_webhook = True
+
+    def execute(self, context, member=None):
+        return {'report_lines': []}
+
+    def post_execute(self, context):
+        group_member_count = context.get('group_member_count', 0)
+        
+        # Check trigger threshold (default 485, buffer 480)
+        trigger_threshold = int(os.getenv('CLAN_CAPACITY_THRESHOLD', 485))
+        target_buffer = int(os.getenv('CLAN_CAPACITY_BUFFER', 480))
+        
+        if group_member_count < trigger_threshold:
+            return []
+            
+        slots_needed = max(1, group_member_count - target_buffer)
+        
+        # Pool 1: Excess Alt Accounts
+        violators = context.get('alt_limit_violators', [])
+        active_issue_durations = context.get('active_issue_durations', {})
+        today = datetime.utcnow().date()
+        
+        candidates = []
+        seen_discord_ids = set()
+        
+        for v in violators:
+            did = str(v['discord_id'])
+            dname = v['discord_name']
+            clan_rank = v['clan_rank']
+            max_accs = v['max_accounts']
+            accs_details = v.get('accounts_details', [])
+            
+            if not accs_details or len(accs_details) <= max_accs:
+                continue
+                
+            excess_count = len(accs_details) - max_accs
+            
+            # Sort alts by oldest WOM update (most inactive first)
+            sorted_accs = sorted(accs_details, key=lambda a: -a.get('days_ago', 0))
+            target_alt = sorted_accs[0]
+            alt_wom_days = target_alt.get('days_ago', 0)
+            
+            # Alt Inactivity Score against 14-day tolerance
+            alt_inact_score = (alt_wom_days / 14.0) * 100.0 if alt_wom_days < 9999 else 100.0
+            
+            # Issue overstay from history.db issue_tracker
+            issue_info = active_issue_durations.get(('member', str(did), MemberAltLimitAudit.title))
+            days_active = issue_info.get('days_active', 0) if issue_info else 0
+            overstay_score = (days_active / 14.0) * 100.0
+            
+            # Penalty for having >1 excess account (+200 score per extra excess account)
+            hoarder_penalty = (excess_count - 1) * 200.0 if excess_count > 1 else 0.0
+            
+            score = max(alt_inact_score, overstay_score) + hoarder_penalty
+            
+            tag = self.get_duration_tag(context, 'member', did, issue_title=self.title)
+            header = f"• {self.fmt_name(dname)}{tag} | Rank: {self.fmt_rank(clan_rank)}"
+            
+            alt_rsn = target_alt['rsn']
+            alt_type = target_alt.get('type_tag', '')
+            
+            wom_str = f"{alt_wom_days} days inactive" if alt_wom_days < 9999 else "Activity Unknown"
+            excess_str = f"+{excess_count} excess" if excess_count > 1 else "1 excess"
+            overstay_str = f" | Over limit for {days_active}d" if days_active > 7 else ""
+            
+            item_text = (
+                f"{header}\n"
+                f"> * Action: **Remove Excess Alt** `{alt_rsn}`{alt_type}\n"
+                f">   * Detail: Allowed {max_accs} acc, has {len(accs_details)} in clan ({excess_str})\n"
+                f">   * Target Alt WOM: {wom_str}{overstay_str}"
+            )
+            
+            candidates.append({
+                'discord_id': did,
+                'score': score,
+                'type': 'alt',
+                'report_item': item_text
+            })
+            seen_discord_ids.add(did)
+            
+        # Pool 2: Fully Inactive Members
+        all_members = context.get('all_members', [])
+        rank_rules = context.get('rank_rules', [])
+        target_clan_name = context.get('target_clan_name', 'Au Osrs')
+        wom_act = context.get('wom_activity_map', {})
+        wom_types = context.get('wom_type_map', {})
+        
+        try:
+            from inactivity_monitor import evaluate_inactivity
+            inactive_users, _, _ = evaluate_inactivity(
+                all_members, rank_rules, target_clan_name=target_clan_name,
+                wom_activity_map=wom_act, wom_type_map=wom_types
+            )
+            
+            for u in inactive_users:
+                did = str(u['discord_id'])
+                if did in seen_discord_ids:
+                    continue
+                    
+                true_days = u['true_days']
+                limit = u['limit']
+                ratio = (true_days / limit) if limit else 1.0
+                score = ratio * 100.0
+                
+                clan_accs = u.get('clan_accounts', [])
+                if clan_accs:
+                    sorted_clan = sorted(clan_accs, key=lambda a: -( (today - a['wom_date']).days if a.get('wom_date') else 9999 ))
+                    target_acc = sorted_clan[0]
+                    target_rsn = target_acc['rsn']
+                    target_type = target_acc.get('type_tag', '')
+                else:
+                    target_rsn = u['discord_name']
+                    target_type = ""
+                    
+                tag = self.get_duration_tag(context, 'member', did, issue_title=self.title)
+                header = f"• {self.fmt_name(u['discord_name'])}{tag} | Rank: {self.fmt_rank(u['rank'])}"
+                
+                d_str = f"{u['discord_days']}d ago" if u['discord_days'] < 9999 else "Never"
+                w_str = f"{u['wom_days']}d ago" if u['wom_days'] < 9999 else "Unknown"
+                
+                item_text = (
+                    f"{header}\n"
+                    f"> * Action: **Kick Inactive Member** `{target_rsn}`{target_type}\n"
+                    f">   * Detail: {true_days} days inactive ({ratio:.1f}x rank limit of {limit}d)\n"
+                    f">   * Last Active: Discord {d_str} | Clan WOM {w_str}"
+                )
+                
+                candidates.append({
+                    'discord_id': did,
+                    'score': score,
+                    'type': 'inactive',
+                    'report_item': item_text
+                })
+                seen_discord_ids.add(did)
+        except Exception as e:
+            logger.error(f"Failed to evaluate inactivity for capacity purge: {e}")
+
+        # Sort candidates strictly by severity score descending
+        candidates.sort(key=lambda c: -c['score'])
+        
+        # Take the top N candidates needed to clear the buffer (at least slots_needed, capped at max display)
+        max_display = max(slots_needed, 10)
+        top_candidates = candidates[:max_display]
+        
+        if not top_candidates:
+            return []
+            
+        header_summary = (
+            f"**Clan Member Count: {group_member_count} / 500** (Safe Buffer: {target_buffer})\n"
+            f"> *Need to remove at least **{slots_needed} account{'s' if slots_needed != 1 else ''}** to restore the recruitment buffer.*\n"
+            f"> *Showing top {len(top_candidates)} recommended removals ordered by violation severity:*"
+        )
+        
+        result_lines = [header_summary]
+        for c in top_candidates:
+            result_lines.append(c['report_item'])
+            
+        report_path = SHARED_DATA_DIR / "reports" / "capacity_removals.md"
+        try:
+            os.makedirs(report_path.parent, exist_ok=True)
+            safe_write_report(report_path, "\n\n".join(result_lines))
+        except Exception as e:
+            logger.warning(f"Could not save capacity_removals.md: {e}")
+
+        return result_lines
 
 
 class MemberBannedInClanAudit(BaseAudit):
@@ -790,6 +970,7 @@ class MemberArchivedAudit(BaseAudit):
 ACTIVE_AUDITS = [
     # This audit runs first to flag inactive members. Subsequent audits will skip these members for performance.
     MemberArchivedAudit(),
+    ClanCapacityRemovalAudit(),
     MemberNotInClanAudit(),
     MemberReturnedAudit(),
     GlobalUntrackedAudit(),
@@ -863,12 +1044,14 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     context['managed_role_ids'] = set()
     context['all_req_roles'] = set()
     context['all_members'] = all_members
+    context['rank_rules'] = rank_rules
     context['alt_limit_violators'] = []
     
-    # Parse WOM cache to get lastChangedAt and player type for in-game activity
-    wom_activity_map, wom_type_map = load_wom_cache_maps()
+    # Parse WOM cache to get lastChangedAt, player type, and group size
+    wom_activity_map, wom_type_map, group_member_count = load_wom_cache_maps()
     context['wom_activity_map'] = wom_activity_map
     context['wom_type_map'] = wom_type_map
+    context['group_member_count'] = group_member_count
     
     banned_members = context.get('banned_members', [])
     context['banned_wom_ids'] = {str(m['wom_id']) for m in banned_members}
@@ -1011,6 +1194,8 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     # Flatten into webhook_manager section format
     report_sections = []
     for title, data in report_data.items():
+        if title == ClanCapacityRemovalAudit.title and not data['lines']:
+            continue
         report_sections.append({"title": title, "lines": data['lines'], "description": data['description']})
         
     return report_sections
