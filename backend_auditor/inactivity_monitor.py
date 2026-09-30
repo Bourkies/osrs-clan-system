@@ -5,7 +5,7 @@ from datetime import datetime, date
 from pathlib import Path
 from loguru import logger
 from constants import SHARED_DATA_DIR, SystemFlag
-from file_utils import safe_write_report
+from file_utils import safe_write_report, load_wom_cache_maps, get_account_type_tag
 
 def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osrs"):
     logger.info(f"Starting Clan Inactivity Monitor for target clan '{target_clan_name}'...")
@@ -62,39 +62,8 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
         logger.error(f"Failed to query {input_db}: {e}")
         return
         
-    # 3. Parse WOM cache to get lastChangedAt for in-game activity
-    wom_cache_file = SHARED_DATA_DIR / "caches" / "wom_cache.json"
-    wom_activity_map = {}
-    if wom_cache_file.exists():
-        try:
-            with open(wom_cache_file, 'r', encoding='utf-8') as f:
-                wom_cache = json.load(f)
-                
-            for key, entry in wom_cache.items():
-                if key.startswith("player_") or key.startswith("group_details_"):
-                    data = entry.get("data", {})
-                    
-                    # Handle group_details structure
-                    if "memberships" in data:
-                        for membership in data.get("memberships", []):
-                            player = membership.get("player", {})
-                            w_id = str(player.get("id"))
-                            last_changed = player.get("lastChangedAt")
-                            if w_id and w_id != 'None' and last_changed:
-                                parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
-                                if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
-                                    wom_activity_map[w_id] = parsed_date
-                                    
-                    # Handle individual player structure
-                    w_id = str(data.get("id"))
-                    last_changed = data.get("lastChangedAt")
-                    if w_id and w_id != 'None' and last_changed:
-                        parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
-                        if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
-                            wom_activity_map[w_id] = parsed_date
-                            
-        except Exception as e:
-            logger.error(f"Failed to read WOM cache for inactivity monitor: {e}")
+    # 3. Parse WOM cache to get lastChangedAt and player type for in-game activity
+    wom_activity_map, wom_type_map = load_wom_cache_maps()
 
     # 4. Evaluate Members
     today = datetime.utcnow().date()
@@ -132,13 +101,15 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
             clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "None"
             is_in_clan = bool(target_clan_name and clan.lower() == target_clan_name.lower())
             wom_date = wom_activity_map.get(wid) if wid else None
+            type_tag = get_account_type_tag(wid, wom_type_map)
             
             accounts.append({
                 'rsn': rsn,
                 'wom_id': wid,
                 'clan': clan,
                 'is_in_clan': is_in_clan,
-                'wom_date': wom_date
+                'wom_date': wom_date,
+                'type_tag': type_tag
             })
             
         clan_accounts = [acc for acc in accounts if acc['is_in_clan']]
@@ -180,8 +151,8 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
             if not discord_name or discord_name.lower() == 'unknown':
                 discord_name = discord_id
                 
-            clan_rsns_str = ", ".join(acc['rsn'] for acc in clan_accounts)
-            other_rsns_str = ", ".join(acc['rsn'] for acc in other_accounts) if other_accounts else ""
+            clan_rsns_str = ", ".join(f"`{acc['rsn']}`{acc['type_tag']}" for acc in clan_accounts)
+            other_rsns_str = ", ".join(f"`{acc['rsn']}`{acc['type_tag']}" for acc in other_accounts) if other_accounts else ""
             
             user_data = {
                 'discord_id': discord_id,
@@ -239,9 +210,9 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
             w_display = f"{u['wom_days']} Days ({u['wom_active']})" if u['wom_days'] != 9999 else u['wom_active']
             true_days_str = f"{u['true_days']} Days Inactive" if u['true_days'] != 9999 else "Never Active"
             
-            header_rsns = f"Clan Account: `{u['clan_rsns']}`"
+            header_rsns = f"Clan Account: {u['clan_rsns']}"
             if u['other_rsns']:
-                header_rsns += f" | Other: `{u['other_rsns']}`"
+                header_rsns += f" | Other: {u['other_rsns']}"
                 
             report_lines.append(f"* **{u['discord_name']}** | {header_rsns}")
             report_lines.append(f"  * **{true_days_str}** (Chats & Broadcasts: {d_display} | Clan Account WOM: {w_display})")
@@ -254,7 +225,7 @@ def generate_inactivity_report(all_members, rank_rules, target_clan_name="Au Osr
                     w_date = acc['wom_date']
                     w_days = (today - w_date).days if w_date else None
                     w_str = f"{w_days} Days ago ({w_date.strftime('%Y-%m-%d')})" if w_days is not None else "Unknown"
-                    report_lines.append(f"    * `{acc['rsn']}` [{status_tag}] — WOM Updated: {w_str}")
+                    report_lines.append(f"    * `{acc['rsn']}`{acc['type_tag']} [{status_tag}] — WOM Updated: {w_str}")
                     
             report_lines.append(f"  * *Activity:* 1M: {s.get('chats_1m', 0)}/{s.get('broadcasts_1m', 0)} | 3M: {s.get('chats_3m', 0)}/{s.get('broadcasts_3m', 0)} | 6M: {s.get('chats_6m', 0)}/{s.get('broadcasts_6m', 0)} | Total: {s.get('chats_total', 0)}/{s.get('broadcasts_total', 0)}\n")
 

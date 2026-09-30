@@ -3,7 +3,7 @@ import json
 from datetime import datetime, date
 from loguru import logger
 from constants import SystemFlag, SHARED_DATA_DIR
-from file_utils import safe_write_report
+from file_utils import safe_write_report, load_wom_cache_maps, get_account_type_tag, TYPE_ABBREVIATIONS
 
 class BaseAudit:
     """
@@ -54,30 +54,41 @@ class BaseAudit:
         return f"*{str(val).strip()}*"
         
     @staticmethod
+    def get_account_type_tag(wid, context):
+        """Returns ' [M]', ' [I]', ' [HC]', ' [UIM]', etc. or '' if unknown/unmapped."""
+        if not wid or not context:
+            return ""
+        return get_account_type_tag(wid, context.get('wom_type_map', {}))
+
+    @staticmethod
     def get_target_clan_accounts(member, target_clan_name):
         """
         Extracts ALL RSNs, but masks the Game Rank as 'Unknown' for accounts that are NOT in the target clan.
-        Returns a tuple of lists: (all_rsns, masked_ranks)
+        Returns a tuple of lists: (all_rsns, masked_ranks, target_wids)
         """
         rsns_list = [r.strip() for r in str(member.get('RSNs', '')).split(',')]
         game_ranks_list = [r.strip() for r in str(member.get('Game Ranks', '')).split(',')]
         account_clans = [c.strip() for c in str(member.get('Account Clan', '')).split(',')]
+        wom_ids_list = [w.strip() for w in str(member.get('WOM IDs', '')).split(',')]
         
         target_rsns = []
         target_ranks = []
+        target_wids = []
         
-        for i in range(max(len(rsns_list), len(game_ranks_list), len(account_clans))):
+        for i in range(max(len(rsns_list), len(game_ranks_list), len(account_clans), len(wom_ids_list))):
             rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
             rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
             clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
+            wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
             
             target_rsns.append(rsn)
+            target_wids.append(wid)
             if target_clan_name and clan.lower() == target_clan_name.lower():
                 target_ranks.append(rank)
             else:
                 target_ranks.append("Unknown")
                 
-        return target_rsns, target_ranks
+        return target_rsns, target_ranks, target_wids
 
     def get_duration_tag(self, context, entity_type, entity_id, issue_title=None):
         title = issue_title or self.title
@@ -185,7 +196,8 @@ class GlobalBannedAudit(BaseAudit):
             if collected is not None:
                 collected.add(('wom_account', w_id, self.title))
             tag = self.get_duration_tag(context, 'wom_account', w_id)
-            lines.append(f"• {self.fmt_name(m['rsn'])}{tag} (WOM ID: {self.fmt_id(w_id)})")
+            type_tag = self.get_account_type_tag(w_id, context)
+            lines.append(f"• {self.fmt_name(m['rsn'])}{type_tag}{tag} (WOM ID: {self.fmt_id(w_id)})")
         return {'report_lines': lines}
 
 
@@ -203,7 +215,8 @@ class GlobalUntrackedAudit(BaseAudit):
             if collected is not None:
                 collected.add(('wom_account', w_id, self.title))
             tag = self.get_duration_tag(context, 'wom_account', w_id)
-            lines.append(f"• {self.fmt_name(m['rsn'])}{tag} (WOM ID: {self.fmt_id(w_id)})")
+            type_tag = self.get_account_type_tag(w_id, context)
+            lines.append(f"• {self.fmt_name(m['rsn'])}{type_tag}{tag} (WOM ID: {self.fmt_id(w_id)})")
         return {'report_lines': lines}
 
 class GlobalWomUpdateFailedAudit(BaseAudit):
@@ -276,19 +289,22 @@ class MemberNotInClanAudit(BaseAudit):
                     
                     rsns_list = [r.strip() for r in str(member.get('RSNs', 'Unknown')).split(',')]
                     game_ranks_list = [r.strip() for r in str(member.get('Game Ranks', '')).split(',')]
+                    wom_ids_list = [w.strip() for w in str(member.get('WOM IDs', '')).split(',')]
                     account_displays = []
                     
-                    for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list))):
+                    for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list), len(wom_ids_list))):
                         rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
                         clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
                         rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
+                        wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
+                        type_tag = self.get_account_type_tag(wid, context)
                         
                         if rsn == "Unknown" and clan == "Unknown": continue
                         
                         if clan and clan.lower() not in ['none', 'unknown', target_clan_name.lower()]:
-                            account_displays.append(f"{self.fmt_name(rsn)} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
+                            account_displays.append(f"{self.fmt_name(rsn)}{type_tag} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
                         else:
-                            account_displays.append(self.fmt_name(rsn))
+                            account_displays.append(f"{self.fmt_name(rsn)}{type_tag}")
                             
                     d_name = str(member.get('Discord Name', '')).strip()
                     d_id = str(member.get('Discord ID', '')).replace("'", "").strip()
@@ -335,19 +351,22 @@ class MemberReturnedAudit(BaseAudit):
             rsns_list = [r.strip() for r in str(member.get('RSNs', 'Unknown')).split(',')]
             game_ranks_list = [r.strip() for r in str(member.get('Game Ranks', '')).split(',')]
             account_clans = [c.strip() for c in str(member.get('Account Clan', '')).split(',')]
+            wom_ids_list = [w.strip() for w in str(member.get('WOM IDs', '')).split(',')]
             account_displays = []
             
-            for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list))):
+            for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list), len(wom_ids_list))):
                 rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
                 clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
                 rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
+                wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
+                type_tag = self.get_account_type_tag(wid, context)
                 
                 if rsn == "Unknown" and clan == "Unknown": continue
                 
                 if clan and clan.lower() not in ['none', 'unknown']:
-                    account_displays.append(f"{self.fmt_name(rsn)} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
+                    account_displays.append(f"{self.fmt_name(rsn)}{type_tag} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
                 else:
-                    account_displays.append(self.fmt_name(rsn))
+                    account_displays.append(f"{self.fmt_name(rsn)}{type_tag}")
                     
             report_line = self.build_member_header(member, context, account_displays) + "\n"
             
@@ -416,7 +435,7 @@ class GeneralRankMismatchAudit(BaseAudit):
             
         target_clan_name = context.get('target_clan_name', '')
         clan_rank = str(member.get('Clan Rank', '')).strip()
-        rsns_list, game_ranks_list = self.get_target_clan_accounts(member, target_clan_name)
+        rsns_list, game_ranks_list, wom_ids_list = self.get_target_clan_accounts(member, target_clan_name)
         clean_ranks = [r for r in game_ranks_list if r and r != 'Unknown']
         
         ignored_event_ranks_env = os.getenv('IGNORED_EVENT_RANKS', '')
@@ -502,17 +521,19 @@ class GeneralRankMismatchAudit(BaseAudit):
             
         if is_mismatch:
             account_tuples = []
-            for i in range(max(len(rsns_list), len(game_ranks_list))):
+            for i in range(max(len(rsns_list), len(game_ranks_list), len(wom_ids_list))):
                 rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
                 rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
-                if rsn != "Unknown" or rank != "Unknown": account_tuples.append((rsn, rank))
+                wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
+                type_tag = self.get_account_type_tag(wid, context)
+                if rsn != "Unknown" or rank != "Unknown": account_tuples.append((rsn, rank, type_tag))
                 
             rsn_displays = []
-            for r, rk in account_tuples:
+            for r, rk, tt in account_tuples:
                 if rk == "Unknown":
-                    rsn_displays.append(self.fmt_name(r))
+                    rsn_displays.append(f"{self.fmt_name(r)}{tt}")
                 else:
-                    rsn_displays.append(f"{self.fmt_name(r)} {self.fmt_rank(rk)}")
+                    rsn_displays.append(f"{self.fmt_name(r)}{tt} {self.fmt_rank(rk)}")
                     
             report_line = self.build_member_header(member, context, rsn_displays) + "\n"
             
@@ -568,23 +589,26 @@ class MemberMultipleClansAudit(BaseAudit):
             
         rsns_list = [r.strip() for r in str(member.get('RSNs', 'Unknown')).split(',')]
         game_ranks_list = [r.strip() for r in str(member.get('Game Ranks', 'Unknown')).split(',')]
+        wom_ids_list = [w.strip() for w in str(member.get('WOM IDs', '')).split(',')]
         offending_accounts = []
         all_accounts_display = []
         
-        for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list))):
+        for i in range(max(len(rsns_list), len(account_clans), len(game_ranks_list), len(wom_ids_list))):
             rsn = rsns_list[i] if i < len(rsns_list) and rsns_list[i] else "Unknown"
             clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
             rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
+            wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
+            type_tag = self.get_account_type_tag(wid, context)
             
             if rsn == "Unknown" and clan == "Unknown": continue
             
             if clan and clan.lower() == target_clan_name.lower():
-                all_accounts_display.append(f"{self.fmt_name(rsn)} {self.fmt_rank(rank)}")
+                all_accounts_display.append(f"{self.fmt_name(rsn)}{type_tag} {self.fmt_rank(rank)}")
             else:
-                all_accounts_display.append(self.fmt_name(rsn))
+                all_accounts_display.append(f"{self.fmt_name(rsn)}{type_tag}")
             
             if clan and clan.lower() not in ['none', 'unknown', target_clan_name.lower()]:
-                offending_accounts.append(f"{self.fmt_name(rsn)} in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)}")
+                offending_accounts.append(f"{self.fmt_name(rsn)}{type_tag} in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)}")
                 
         if offending_accounts:
             report_line = self.build_member_header(member, context, all_accounts_display) + "\n"
@@ -611,17 +635,18 @@ class MemberLeftDiscordAudit(BaseAudit):
             return {'flag_to_add': None, 'flag_to_remove': None, 'report_line': None}
             
         target_clan_name = context.get('target_clan_name', '')
-        target_rsns, target_ranks = self.get_target_clan_accounts(member, target_clan_name)
+        target_rsns, target_ranks, target_wids = self.get_target_clan_accounts(member, target_clan_name)
         
         rsn_displays = []
         active_accounts = []
-        for rsn, rank in zip(target_rsns, target_ranks):
+        for rsn, rank, wid in zip(target_rsns, target_ranks, target_wids):
+            type_tag = self.get_account_type_tag(wid, context)
             if rank != "Unknown":
-                formatted = f"{self.fmt_name(rsn)} {self.fmt_rank(rank)}"
+                formatted = f"{self.fmt_name(rsn)}{type_tag} {self.fmt_rank(rank)}"
                 active_accounts.append(formatted)
                 rsn_displays.append(formatted)
             else:
-                rsn_displays.append(self.fmt_name(rsn))
+                rsn_displays.append(f"{self.fmt_name(rsn)}{type_tag}")
                 
         if active_accounts:
             report_line = self.build_member_header(member, context, rsn_displays) + "\n"
@@ -668,22 +693,23 @@ class MemberAltLimitAudit(BaseAudit):
             clan = account_clans[i] if i < len(account_clans) and account_clans[i] else "Unknown"
             rank = game_ranks_list[i] if i < len(game_ranks_list) and game_ranks_list[i] else "Unknown"
             wid = wom_ids_list[i] if i < len(wom_ids_list) and wom_ids_list[i] else None
+            type_tag = self.get_account_type_tag(wid, context)
             
             if rsn == "Unknown" and clan == "Unknown": continue
             
             if clan.lower() == target_clan_name.lower():
-                active_accounts.append(f"{self.fmt_name(rsn)} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
+                active_accounts.append(f"{self.fmt_name(rsn)}{type_tag} (in {self.fmt_rank(clan)} rank {self.fmt_rank(rank)})")
                 
                 wom_date = wom_activity_map.get(wid) if wid else None
                 if wom_date:
                     days_ago = (today - wom_date).days
                     act_str = f"WOM Updated {days_ago} days ago ({wom_date.strftime('%Y-%m-%d')})"
-                    raw_active_rsns.append(f"`{rsn}` (WOM: {days_ago}d ago)")
+                    raw_active_rsns.append(f"`{rsn}`{type_tag} (WOM: {days_ago}d ago)")
                 else:
                     act_str = "WOM Activity Unknown"
-                    raw_active_rsns.append(f"`{rsn}`")
+                    raw_active_rsns.append(f"`{rsn}`{type_tag}")
                     
-                account_activity_lines.append(f">   * {self.fmt_name(rsn)}: {act_str}")
+                account_activity_lines.append(f">   * {self.fmt_name(rsn)}{type_tag}: {act_str}")
                 
         if len(active_accounts) > max_accounts:
             # Accumulate data for the separate Markdown purge report
@@ -839,35 +865,10 @@ def audit_roster(db_manager, rank_rules, audit_logs, context):
     context['all_members'] = all_members
     context['alt_limit_violators'] = []
     
-    # Parse WOM cache to get lastChangedAt for in-game activity
-    wom_cache_file = SHARED_DATA_DIR / "caches" / "wom_cache.json"
-    wom_activity_map = {}
-    if wom_cache_file.exists():
-        try:
-            with open(wom_cache_file, 'r', encoding='utf-8') as f:
-                wom_cache = json.load(f)
-            for key, entry in wom_cache.items():
-                if key.startswith("player_") or key.startswith("group_details_"):
-                    data = entry.get("data", {})
-                    if "memberships" in data:
-                        for membership in data.get("memberships", []):
-                            player = membership.get("player", {})
-                            w_id = str(player.get("id"))
-                            last_changed = player.get("lastChangedAt")
-                            if w_id and w_id != 'None' and last_changed:
-                                parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
-                                if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
-                                    wom_activity_map[w_id] = parsed_date
-                    w_id = str(data.get("id"))
-                    last_changed = data.get("lastChangedAt")
-                    if w_id and w_id != 'None' and last_changed:
-                        parsed_date = datetime.strptime(last_changed[:10], "%Y-%m-%d").date()
-                        if w_id not in wom_activity_map or parsed_date > wom_activity_map[w_id]:
-                            wom_activity_map[w_id] = parsed_date
-        except Exception as e:
-            logger.error(f"Failed to read WOM cache: {e}")
-            
+    # Parse WOM cache to get lastChangedAt and player type for in-game activity
+    wom_activity_map, wom_type_map = load_wom_cache_maps()
     context['wom_activity_map'] = wom_activity_map
+    context['wom_type_map'] = wom_type_map
     
     banned_members = context.get('banned_members', [])
     context['banned_wom_ids'] = {str(m['wom_id']) for m in banned_members}

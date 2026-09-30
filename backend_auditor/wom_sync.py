@@ -38,6 +38,7 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
         str(m['player']['id']): {
             'rsn': m['player'].get('displayName') or m['player'].get('username') or 'Unknown', 
             'rank': m['role'],
+            'type': m['player'].get('type', 'regular'),
             'status': m['player'].get('status', 'active'),
             'updatedAt': m['player'].get('updatedAt'),
             'lastChangedAt': m['player'].get('lastChangedAt')
@@ -123,7 +124,7 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
     
     for wid, data in group_roster.items():
         if data['status'] == 'banned':
-            banned_members.append({'wom_id': wid, 'rsn': data['rsn']})
+            banned_members.append({'wom_id': wid, 'rsn': data['rsn'], 'type': data.get('type')})
 
     # --- Pre-calculate non-group WOM accounts rolling batch update ---
     all_non_group_wids = set()
@@ -289,7 +290,7 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
     untracked_members = []
     for wid, data in group_roster.items():
         if wid not in tracked_wom_ids:
-            untracked_members.append({'wom_id': wid, 'rsn': data['rsn'], 'rank': data['rank']})
+            untracked_members.append({'wom_id': wid, 'rsn': data['rsn'], 'rank': data['rank'], 'type': data.get('type')})
             
     if untracked_members:
         logger.warning(f"Found {len(untracked_members)} untracked members in WOM group.")

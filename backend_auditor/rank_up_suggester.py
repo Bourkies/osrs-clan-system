@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from loguru import logger
-from file_utils import safe_write_report
+from file_utils import safe_write_report, load_wom_cache_maps, get_account_type_tag
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SHARED_DATA_DIR = PROJECT_ROOT / "shared_data"
@@ -120,6 +120,7 @@ def get_highest_rank(ranks_str):
 
 def generate_suggestions(roster_data=None, rank_rules=None):
     logger.info("Starting Clan Rank-Up Suggester...")
+    _, wom_type_map = load_wom_cache_maps()
     input_db = SHARED_DATA_DIR / "databases" / "activity.db"
     output_md = SHARED_DATA_DIR / "reports" / "rank_up_suggestions.md"
     
@@ -370,13 +371,17 @@ def generate_suggestions(roster_data=None, rank_rules=None):
         
         clans_raw = str(member.get('Account Clan', '')).strip()
         clans_list = [c.strip() for c in clans_raw.split(',') if c.strip()]
+        wom_ids_raw = str(member.get('WOM IDs', '')).strip()
+        wom_ids_list = [w.strip() for w in wom_ids_raw.split(',') if w.strip()]
         
         account_lines = []
         for i in range(len(rsns_list)):
             rsn = rsns_list[i]
             rank = ranks_list[i] if i < len(ranks_list) else "Unknown"
             clan = clans_list[i] if i < len(clans_list) else "Unknown"
-            account_lines.append(f"    * `{rsn}` (Rank: `{rank}` | Clan: *{clan}*)")
+            wid = wom_ids_list[i] if i < len(wom_ids_list) else None
+            type_tag = get_account_type_tag(wid, wom_type_map)
+            account_lines.append(f"    * `{rsn}`{type_tag} (Rank: `{rank}` | Clan: *{clan}*)")
             
         if not account_lines:
             account_lines.append("    * *None*")
