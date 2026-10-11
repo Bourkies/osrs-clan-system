@@ -81,7 +81,7 @@ def release_lock():
     except Exception as e:
         logger.error(f"Error releasing lock: {e}")
 
-def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, sync_only=False):
+def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, sync_only=False, audit_only=False):
     logger.info("Initializing Orchestrator...")
     logger.info("Connecting to Google Sheets API...")
     db = DBManager(SPREADSHEET_ID)
@@ -91,10 +91,11 @@ def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, s
     sqlite_mgr = SQLiteManager(SHARED_DATA_DIR / "databases" / "history.db")
     logger.success("SQLite database verified.")
     
-    # Execute Daily Backup Policy
-    retention = os.getenv('BACKUP_RETENTION_DAYS', 30)
-    logger.info("Checking daily backup policy...")
-    backup_manager.run_backup(db, retention_days=retention)
+    if not audit_only:
+        # Execute Daily Backup Policy
+        retention = os.getenv('BACKUP_RETENTION_DAYS', 30)
+        logger.info("Checking daily backup policy...")
+        backup_manager.run_backup(db, retention_days=retention)
 
     wom = WomClient()
     webhook = WebhookManager(DISCORD_WEBHOOK_URL)
@@ -104,7 +105,8 @@ def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, s
     elif refresh_group:
         wom.clear_group_cache()
 
-    db.append_audit_logs(["System Action - System (N/A): Auditor run started."])
+    if not audit_only:
+        db.append_audit_logs(["System Action - System (N/A): Auditor run started."])
 
     rank_rules = db.get_all_records('Reference_Data')
     config_records = db.get_all_records('System_Config')
@@ -113,9 +115,22 @@ def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, s
 
     audit_logs = []
 
-    role_map = discord_sync.sync_roles(db, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, audit_logs)
-    discord_sync.sync_members(db, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, role_map, audit_logs)
-    untracked_members, banned_members, failed_wom_updates = wom_sync.sync_wom_data(db, wom, target_clan_name, audit_logs)
+    if audit_only:
+        logger.info("Running in --audit-only mode: Skipping Discord API syncs and rolling player WOM syncs.")
+        if refresh_group or force_wom:
+            logger.info("Refreshing in-game clan group roster from WOM API (~2s)...")
+            from urllib.parse import quote
+            search_res = wom.get(f'/groups?name={quote(target_clan_name)}&limit=1', cache_key=f"group_search_{target_clan_name}", force_refresh=True)
+            if search_res and search_res[0].get('name', '').lower() == target_clan_name.lower():
+                group_id = search_res[0]['id']
+                wom.get(f'/groups/{group_id}', cache_key=f"group_details_{group_id}", force_refresh=True)
+        role_records = db.get_all_records('Discord_Roles')
+        role_map = {str(row.get('Role ID', '')).strip(): str(row.get('Role Name', '')).strip() for row in role_records if row.get('Role ID')}
+        untracked_members, banned_members, failed_wom_updates = [], [], {}
+    else:
+        role_map = discord_sync.sync_roles(db, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, audit_logs)
+        discord_sync.sync_members(db, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, role_map, audit_logs)
+        untracked_members, banned_members, failed_wom_updates = wom_sync.sync_wom_data(db, wom, target_clan_name, audit_logs)
     
     report_sections = []
     
@@ -186,6 +201,7 @@ def main():
     parser.add_argument('--refresh-group', action='store_true', help='Force refresh only the WOM clan group roster cache (keeps individual player caches).')
     parser.add_argument('--no-webhook', action='store_true', help='Run full sync and audit, but skip sending the Discord webhook.')
     parser.add_argument('--sync-only', action='store_true', help='Sync APIs to database, but skip audits and webhook.')
+    parser.add_argument('--audit-only', action='store_true', help='Skip external API syncs (Discord and WOM); run audits on current database and post webhook.')
     args = parser.parse_args()
 
     try:
@@ -194,7 +210,8 @@ def main():
             force_wom=args.force_wom, 
             refresh_group=args.refresh_group, 
             skip_webhook=args.no_webhook, 
-            sync_only=args.sync_only
+            sync_only=args.sync_only,
+            audit_only=args.audit_only
         )
     finally:
         release_lock()

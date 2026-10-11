@@ -263,3 +263,30 @@ To avoid making assumptions, the system uses explicit state and error flags. Bec
 * **`Banned`**: Used to blacklist a user. If a user with this flag rejoins the Discord server, the Auditor will append them, but the "Banned" flag will persist, alerting Admins in reports.
 * **`On Leave`**: A standard flag for members on an approved hiatus.
 * **Acknowledge System Flags**: Admins can type the exact name of a System Flag (e.g., `Rank Mismatch`) here to tell the Auditor to ignore the discrepancy. This can be done manually via the Web UI or interactively in bulk using the `audit_resolver.py` CLI tool.
+
+
+## **6. Audit & Discord Webhook Formatting Standard (Standard A)**
+
+To maintain clean, readable reports in Discord and local Markdown files, all audit outputs follow the **Standard A** formatting specification:
+
+### **Entity Formatting Rules**
+| Entity Type | Format | Syntax | Example |
+| :--- | :--- | :--- | :--- |
+| **Discord Username** | Inline Code Block | `` `Name` `` | `` `Shifty Shed` `` |
+| **RSN (OSRS Display Name)** | Inline Code Block | `` `rsn` `` | `` `evasive shed` `` |
+| **Clan / Sheet Rank** | Bold Text | `**Rank**` | `**Dragonstone**`, `**Emerald**` |
+| **In-Game Rank** | Bold Text | `**rank**` | `**master**`, `**elite**` |
+| **Discord Roles** | Bold Text | `**Role**` | `**Event Planner**` |
+| **Account Type Tag** | Bracketed Tag | `[Type]` | `[M]` (Main), `[I]` (Iron), `[HC]` (Hardcore) |
+| **Issue Age / Status** | Italicized Parentheses | `*(tag)*` | `*(NEW)*`, `*(4d)*`, `*(Not in Discord)*` |
+| **Inactivity Durations** | Parentheses | `(days)` | `(225d)`, `(94d inact, Limit: 30d)` |
+| **Action Transitions** | Action Arrow | `➔ Action:` | `➔ Kick:`, `➔ Kick Inactive:` |
+
+### **Design Principles**
+1. **Name Protection:** Discord and OSRS display names MUST always use inline code blocks (`` `name` ``) to prevent symbols (`*`, `_`, `~`) from corrupting markdown formatting.
+2. **Rank Contrast:** Ranks and roles use **bold text** (`**Rank**`), providing immediate visual separation from grey code block names without competing code fences.
+3. **Capacity Removals (Tiered Ordering):**
+   - **Tier 1 (Multi-Excess Alts $\ge$ 2):** Listed at the top, ordered by excess count descending, then by alt inactivity days. Action recommends kicking all excess alts ordered from most inactive to least inactive.
+   - **Tier 2 (Single-Excess Alts & Inactive Members):** Ordered together strictly by inactivity severity descending.
+   - **Display Window:** Always displays at least 10 distinct members to provide leadership with actionable options.
+   - **Issue Tracking:** Capacity removal recommendations persist active issue keys so issue age progresses (`*(NEW)*` $\rightarrow$ `*(1d)*` $\rightarrow$ `*(2d)*`).
