@@ -149,3 +149,39 @@ def generate_dashboard_export(roster_data, history_db_path=None, output_path=Non
         logger.error(f"Failed to write dashboard export file to {final_path}: {e}")
         
     return final_path
+
+
+def export_wom_group_stats(stats_data, output_path=None):
+    """
+    Exports the Wise Old Man group statistics (metricLeaders, clan averages, maxed counts)
+    to a JSON file for consumption by the ETL dashboard pipeline.
+    """
+    if not stats_data:
+        logger.warning("No WOM group statistics data provided to export.")
+        return None
+
+    if output_path:
+        final_path = Path(output_path)
+    else:
+        final_path = SHARED_DATA_DIR / "exports" / "wom_group_stats.json"
+
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    export_payload = {
+        "metadata": {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "source": "wiseoldman_v2_group_statistics"
+        },
+        "data": stats_data
+    }
+
+    try:
+        tmp_path = final_path.with_suffix('.tmp')
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(export_payload, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, final_path)
+        logger.info(f"Successfully exported WOM group statistics to {final_path}")
+        return final_path
+    except IOError as e:
+        logger.error(f"Failed to write WOM group stats export to {final_path}: {e}")
+        return None

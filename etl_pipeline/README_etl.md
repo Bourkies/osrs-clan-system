@@ -51,7 +51,7 @@ When `run_etl.py` is executed, it runs scripts in the following order:
 2. `2_fetch_item_prices.py`: Connects to the Wiki API to get historic valuations.
 3. `3_parse_engine.py`: Uses Regex configs to categorize messages (Chat, Drops, Level Ups).
 4. `4_enrich_roster.py`: Reads the Auditor's `roster_export.json` to link in-game names to static Discord IDs and handles grace periods for members who leave.
-5. `5_transform_data.py`: Normalizes the data into un-chunked `_all_time` master logs for dynamic UI filtering, and pre-calculates heavy timeseries charts.
+5. `5_transform_data.py`: Normalizes the data into un-chunked `_all_time` master logs for dynamic UI filtering, pre-calculates heavy timeseries charts, and processes `wom_group_stats.json` to generate `content_hiscores_summary` and `clan_statistics_summary` tables for clan highscores and milestone tracking.
 6. `6_post_pbs_to_discord.py`: Posts new achievements dynamically to Discord.
 
 ### Manual Executions

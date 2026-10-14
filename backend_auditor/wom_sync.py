@@ -296,3 +296,68 @@ def sync_wom_data(db_manager, wom_client, target_clan_name, audit_logs):
         logger.warning(f"Found {len(untracked_members)} untracked members in WOM group.")
         
     return untracked_members, banned_members, failed_updates
+
+
+def get_or_find_group_id(wom_client, target_clan_name):
+    """Retrieves the WOM group ID for target clan from cache or search."""
+    if not target_clan_name or target_clan_name == 'Unknown Clan':
+        return None
+    search_res = wom_client.get(f'/groups?name={quote(target_clan_name)}&limit=1', cache_key=f"group_search_{target_clan_name}")
+    if search_res and search_res[0].get('name', '').lower() == target_clan_name.lower():
+        return search_res[0]['id']
+    return None
+
+
+def sync_wom_group_statistics(wom_client, group_id, force_refresh=False):
+    """
+    Fetches the group statistics from Wise Old Man API:
+    - metricLeaders: #1 leader for all skills, bosses, activities, and computed metrics (EHP/EHB).
+    - clan milestones: maxedCombatCount, maxedTotalCount, maxed200msCount, averageStats.
+
+    Freshness rules:
+    - Runs fresh if force_refresh is True.
+    - Runs fresh if cached data is older than 7 days.
+    - Runs fresh if today is Monday UTC and last fetch was before today 00:00 UTC.
+    - Otherwise returns cached data.
+    """
+    cache_key = f"group_stats_{group_id}"
+    cache_ts = wom_client.get_cache_timestamp(cache_key)
+    now = datetime.utcnow()
+    
+    should_refresh = force_refresh
+    if not should_refresh:
+        if cache_ts == 0:
+            should_refresh = True
+            logger.info(f"WOM Group Stats: No existing cache found for group {group_id}. Fetching fresh...")
+        else:
+            age_days = (time.time() - cache_ts) / 86400.0
+            if age_days >= 7.0:
+                should_refresh = True
+                logger.info(f"WOM Group Stats: Cache is {age_days:.1f} days old (>= 7 days). Fetching fresh...")
+            elif now.weekday() == 0:  # Monday UTC
+                start_of_monday = datetime(now.year, now.month, now.day)
+                last_fetch_dt = datetime.utcfromtimestamp(cache_ts)
+                if last_fetch_dt < start_of_monday:
+                    should_refresh = True
+                    logger.info("WOM Group Stats: Today is Monday UTC and no fetch completed today yet. Fetching fresh...")
+    
+    if not should_refresh:
+        logger.info(f"WOM Group Stats: Using cached statistics for group {group_id} (fetched {((time.time() - cache_ts) / 3600):.1f}h ago).")
+        return wom_client.get(f'/groups/{group_id}/statistics', cache_key=cache_key, force_refresh=False)
+        
+    try:
+        logger.info(f"Requesting fresh WOM Group Statistics for Group ID {group_id}...")
+        stats_data = wom_client.get(f'/groups/{group_id}/statistics', cache_key=cache_key, force_refresh=True)
+        if stats_data:
+            logger.success(f"Successfully retrieved WOM Group Statistics for Group {group_id}.")
+            return stats_data
+        else:
+            logger.warning(f"WOM Group Statistics endpoint returned empty data for Group {group_id}.")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to fetch WOM Group Statistics: {e}")
+        # Fallback to cache if available
+        if cache_key in getattr(wom_client, 'cache', {}):
+            logger.warning("Falling back to stale WOM group stats cache.")
+            return wom_client.cache[cache_key].get('data')
+        return None

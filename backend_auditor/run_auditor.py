@@ -81,7 +81,7 @@ def release_lock():
     except Exception as e:
         logger.error(f"Error releasing lock: {e}")
 
-def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, sync_only=False, audit_only=False):
+def run_orchestrator(force_wom=False, refresh_group=False, refresh_stats=False, skip_webhook=False, sync_only=False, audit_only=False):
     logger.info("Initializing Orchestrator...")
     logger.info("Connecting to Google Sheets API...")
     db = DBManager(SPREADSHEET_ID)
@@ -173,6 +173,15 @@ def run_orchestrator(force_wom=False, refresh_group=False, skip_webhook=False, s
     if not skip_webhook and not sync_only:
         webhook.send_report(report_sections, metadata=report_metadata)
         
+    # Sync and Export Wise Old Man Group Statistics for the ELT Dashboard
+    group_id = wom_sync.get_or_find_group_id(wom, target_clan_name)
+    if group_id:
+        stats_data = wom_sync.sync_wom_group_statistics(wom, group_id, force_refresh=(refresh_stats or force_wom))
+        if stats_data:
+            dashboard_exporter.export_wom_group_stats(stats_data)
+    else:
+        logger.warning(f"Could not resolve WOM Group ID for '{target_clan_name}'. Skipping group statistics sync.")
+
     if not sync_only:
         # Export the Roster to JSON for the ELT Dashboard pipeline
         roster_data = db.get_all_records('Database')
@@ -199,6 +208,7 @@ def main():
     parser = argparse.ArgumentParser(description="OSRS Clan Auditor")
     parser.add_argument('--force-wom', action='store_true', help='Force clear and refresh the entire WOM cache.')
     parser.add_argument('--refresh-group', action='store_true', help='Force refresh only the WOM clan group roster cache (keeps individual player caches).')
+    parser.add_argument('--refresh-stats', action='store_true', help='Force refresh the WOM clan group statistics (highscores, leaders, milestones).')
     parser.add_argument('--no-webhook', action='store_true', help='Run full sync and audit, but skip sending the Discord webhook.')
     parser.add_argument('--sync-only', action='store_true', help='Sync APIs to database, but skip audits and webhook.')
     parser.add_argument('--audit-only', action='store_true', help='Skip external API syncs (Discord and WOM); run audits on current database and post webhook.')
@@ -209,12 +219,14 @@ def main():
         run_orchestrator(
             force_wom=args.force_wom, 
             refresh_group=args.refresh_group, 
+            refresh_stats=args.refresh_stats,
             skip_webhook=args.no_webhook, 
             sync_only=args.sync_only,
             audit_only=args.audit_only
         )
     finally:
         release_lock()
+
 
 if __name__ == '__main__':
     main()

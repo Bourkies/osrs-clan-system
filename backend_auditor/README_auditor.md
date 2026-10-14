@@ -13,10 +13,10 @@ This folder contains the files for the Python script, "The Auditor," which acts 
 - `file_utils.py`: Safe atomic file writing utilities to bypass host-level file lock crashes.
 - `wom_client.py`: Handles Wise Old Man API requests, rate limits, and local caching in the `data/` directory.
 - `discord_sync.py`: Fetches roles and members from Discord, discovering new members and updating volatile Discord data.
-- `wom_sync.py`: Uses `wom_client.py` to fetch accounts, updating RSNs, game ranks, and clan statuses.
+- `wom_sync.py`: Uses `wom_client.py` to fetch accounts, updating RSNs, game ranks, and clan statuses. Also syncs Wise Old Man clan group statistics (highscores and milestones) for the dashboard.
 - `sqlite_manager.py`: Local database manager for tracking raw JSON snapshots, a normalized history of player name changes, and active issue duration history (`issue_tracker`).
 - `audit_logic.py`: An extensible, Object-Oriented rules engine (`BaseAudit`) that cross-references synced data to flag discrepancies, manages `System Flags`, and formats Discord webhook reports.
-- `dashboard_exporter.py`: Generates a complete JSON roster export (including IDs, flags, and name-change history) for the ETL Dashboard. Uses atomic writes to prevent database locking.
+- `dashboard_exporter.py`: Generates complete JSON exports (`roster_export.json` and `wom_group_stats.json`) for the ETL Dashboard. Uses atomic writes to prevent database locking.
 - `CLI Tools`: Several setup scripts (e.g., `account_linker.py`, `rank_matcher.py`, `audit_resolver.py`) designed to help administrators rapidly sort untracked data.
 
 *(Note: State data, logs, and configurations have been abstracted to the root `shared_data` and `shared_secrets` folders.)*
@@ -80,6 +80,8 @@ For testing and running the script locally, it is highly recommended to use a Py
 6.  **Run the script:**
     *   Standard run: `python run_auditor.py`
     *   Ignore WOM cache: `python run_auditor.py --force-wom`
+    *   Force refresh WOM Group roster only: `python run_auditor.py --refresh-group`
+    *   Force refresh WOM Clan Statistics & Leaders: `python run_auditor.py --refresh-stats`
     *   Run audits silently (no Discord ping): `python run_auditor.py --no-webhook`
     *   Sync APIs silently (skip audits completely): `python run_auditor.py --sync-only`
 

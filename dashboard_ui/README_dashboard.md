@@ -6,6 +6,7 @@ This folder contains the public-facing Streamlit application for the clan. It se
 * **Lightweight:** Powered by Streamlit for rapid web prototyping and deployment.
 * **Separation of Concerns:** Does not connect to Discord, WOM, or the Google Sheets API directly. All data processing is strictly handled by the `etl_pipeline` prior to viewing.
 * **Zero Downtime Updates:** Uses a "Blue/Green" database strategy.
+* **Clan Highscores & Content Records (`7_👑_Clan_Highscores.py`):** Displays dynamic clan record holders across all 113+ OSRS metrics (Bosses, Skills, Activities/Clues, and Efficiency) alongside clan-wide milestones (Maxed players, 200M XP counts), with fast offline-cached icons and custom card artwork.
 
 ## Blue/Green Database Reads
 

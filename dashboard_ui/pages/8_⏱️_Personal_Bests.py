@@ -1,4 +1,4 @@
-# dashboard/pages/7_⏱️_Personal_Bests.py
+# dashboard/pages/8_⏱️_Personal_Bests.py
 
 import streamlit as st
 import pandas as pd

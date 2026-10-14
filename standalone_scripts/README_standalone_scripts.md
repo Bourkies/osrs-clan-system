@@ -53,6 +53,24 @@ SHOW_PLOT = True          # Attempt interactive popup chart window
 
 ---
 
+### `sync_metric_assets.py`
+A specialized asset pipeline synchronizer for the **Clan Highscores** dashboard page. It parses `shared_data/exports/wom_group_stats.json` and ensures local WebP assets exist for all 113+ game metrics:
+1. **32x32 Metric Icons:** Fetched from Wise Old Man's GitHub CDN and saved to `shared_config/assets/metric_icons/{metric}_icon.webp`.
+2. **Transparent Card Artwork:** Dynamically queried from the OSRS Wiki MediaWiki API (`prop=pageimages`) and saved to `shared_config/assets/content_art/card/{metric}_card.webp`.
+
+#### **Features**:
+* **Smart Skipping:** Automatically skips existing assets, executing in milliseconds if all assets are present.
+* **Polite Wiki Throttling:** Enforces a 1.2-second delay between Wiki API calls with an identified User-Agent.
+* **30-Day Failure Cooldown:** Records missing/404 metrics in `.missing_metrics_cache.json` so unmapped content isn't constantly re-queried.
+* **Manual Refresh:** Simply delete any image file in `shared_config/assets/` to have the script re-download it on the next run.
+
+#### **Execution**:
+```bash
+python standalone_scripts/sync_metric_assets.py
+```
+
+---
+
 ## 🖥 Environment & Headless SSH Compatibility
 
 Scripts handle both local desktop environments (with GUI support for interactive plots) and remote SSH / server runs gracefully:

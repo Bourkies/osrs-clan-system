@@ -1,4 +1,4 @@
-# dashboard/pages/9_☠️_Hardcore_Deaths.py
+# dashboard/pages/10_☠️_Hardcore_Deaths.py
 
 import streamlit as st
 import pandas as pd

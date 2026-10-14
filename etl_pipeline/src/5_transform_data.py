@@ -13,7 +13,7 @@ import itertools
 from loguru import logger
 
 from shared_utils import (
-    load_config, get_db_engine, DATA_DIR, SHARED_CONFIG_DIR,
+    load_config, get_db_engine, DATA_DIR, SHARED_CONFIG_DIR, SHARED_DATA_DIR,
     PROJECT_ROOT, BASE_DIR, get_time_periods,
     validate_mapping_rules, apply_manual_name_mappings, 
     apply_discord_name_overrides, finish_script
@@ -1014,7 +1014,171 @@ def generate_recent_achievements_report(df_broadcasts, config, run_warnings, glo
     return df_recent
 
 
+def format_metric_display_name(metric: str) -> str:
+    """Formats metric keys into readable display names."""
+    SPECIAL_NAMES = {
+        "chambers_of_xeric": "Chambers of Xeric",
+        "chambers_of_xeric_cm": "Chambers of Xeric (CM)",
+        "theatre_of_blood": "Theatre of Blood",
+        "theatre_of_blood_hard_mode": "Theatre of Blood (HM)",
+        "tombs_of_amascut": "Tombs of Amascut",
+        "tombs_of_amascut_expert": "Tombs of Amascut (Expert)",
+        "tzkal_zuk": "TzKal-Zuk (Inferno)",
+        "tztok_jad": "TzTok-Jad (Fight Caves)",
+        "sol_heredit": "Sol Heredit (Colosseum)",
+        "colosseum": "Fortis Colosseum",
+        "barrows_chests": "Barrows Chests",
+        "corrupted_gauntlet": "Corrupted Gauntlet",
+        "gauntlet": "The Gauntlet",
+        "clue_scrolls_all": "All Clue Scrolls",
+        "clue_scrolls_beginner": "Beginner Clues",
+        "clue_scrolls_easy": "Easy Clues",
+        "clue_scrolls_medium": "Medium Clues",
+        "clue_scrolls_hard": "Hard Clues",
+        "clue_scrolls_elite": "Elite Clues",
+        "clue_scrolls_master": "Master Clues",
+        "last_man_standing": "Last Man Standing",
+        "soul_wars_zeal": "Soul Wars",
+        "guardians_of_the_rift": "Guardians of the Rift",
+        "ehp": "Efficient Hours Played (EHP)",
+        "ehb": "Efficient Hours Bossed (EHB)",
+    }
+    if metric in SPECIAL_NAMES:
+        return SPECIAL_NAMES[metric]
+    return metric.replace('_', ' ').title()
+
+
+def generate_clan_champions_reports(config, run_warnings):
+    """
+    Parses wom_group_stats.json alongside roster_export.json to produce:
+    1. 'content_hiscores_summary': The #1 clan champion for each boss, skill, activity, and computed metric.
+    2. 'clan_statistics_summary': High-level clan milestone statistics (maxed counts, average stats).
+    """
+    stats_file = SHARED_DATA_DIR / "exports" / "wom_group_stats.json"
+    if not stats_file.exists():
+        logger.warning(f"WOM group statistics export not found at {stats_file}. Skipping clan champions report.")
+        return None, None
+
+    try:
+        with open(stats_file, 'r', encoding='utf-8') as f:
+            stats_payload = json.load(f)
+    except Exception as e:
+        msg = f"Failed to read wom_group_stats.json: {e}"
+        logger.error(msg)
+        run_warnings.append(msg)
+        return None, None
+
+    stats_data = stats_payload.get("data", {})
+    metric_leaders = stats_data.get("metricLeaders", {})
+    if not metric_leaders:
+        logger.warning("No metricLeaders found in wom_group_stats.json.")
+        return None, None
+
+    # Load Roster to map RSN -> Discord Name & Discord ID
+    rsn_to_member = {}
+    roster_file = SHARED_DATA_DIR / "exports" / "roster_export.json"
+    if roster_file.exists():
+        try:
+            with open(roster_file, 'r', encoding='utf-8') as f:
+                roster_payload = json.load(f)
+                for member in roster_payload.get('members', []):
+                    for rsn in member.get('current_rsns', []):
+                        canon = ' '.join(str(rsn).lower().replace('-', ' ').replace('_', ' ').split())
+                        rsn_to_member[canon] = member
+        except Exception as e:
+            logger.warning(f"Could not load roster_export.json for champions enrichment: {e}")
+
+    rows = []
+    # Process each category dynamically
+    for category, items in metric_leaders.items():
+        if not isinstance(items, dict):
+            continue
+        for metric_key, leader_data in items.items():
+            if not isinstance(leader_data, dict):
+                continue
+
+            player = leader_data.get("player")
+            if not player:
+                continue
+
+            rsn = player.get("displayName") or player.get("username") or "Unknown"
+            canon_rsn = ' '.join(str(rsn).lower().replace('-', ' ').replace('_', ' ').split())
+            wom_id = player.get("id")
+
+            # Score extraction based on category
+            if category == "bosses":
+                score = leader_data.get("kills", 0)
+                score_type = "kills"
+                level = None
+            elif category == "skills":
+                score = leader_data.get("experience", 0)
+                score_type = "experience"
+                level = leader_data.get("level")
+            elif category == "activities":
+                score = leader_data.get("score", 0)
+                score_type = "score"
+                level = None
+            elif category == "computed":
+                score = round(float(leader_data.get("value", 0)), 2)
+                score_type = "hours"
+                level = None
+            else:
+                score = leader_data.get("score", 0)
+                score_type = "score"
+                level = None
+
+            # Roster Enrichment & Active Check (Kick Protection)
+            matched_member = rsn_to_member.get(canon_rsn)
+            if matched_member:
+                discord_name = matched_member.get("discord_name", rsn)
+                discord_id = matched_member.get("discord_id")
+                sys_flags = matched_member.get("system_flags", [])
+                is_active = "Archived" not in sys_flags
+            else:
+                discord_name = rsn
+                discord_id = None
+                is_active = True
+
+            rows.append({
+                "category": category,
+                "metric_key": metric_key,
+                "display_name": format_metric_display_name(metric_key),
+                "discord_name": discord_name,
+                "discord_id": discord_id,
+                "rsn": rsn,
+                "wom_id": wom_id,
+                "score": score,
+                "score_type": score_type,
+                "level": level,
+                "global_rank": leader_data.get("rank"),
+                "player_type": player.get("type", "regular"),
+                "player_build": player.get("build", "main"),
+                "is_active_member": is_active,
+                "updated_at": player.get("updatedAt")
+            })
+
+    df_champions = pd.DataFrame(rows)
+    logger.info(f"--> Generated clan content hiscores report with {len(df_champions)} records across {len(metric_leaders)} categories.")
+
+    # High-level Clan Milestone Statistics
+    avg_stats = stats_data.get("averageStats", {}).get("data", {})
+    avg_skills = avg_stats.get("skills", {})
+    avg_overall = avg_skills.get("overall", {})
+
+    stats_rows = [
+        {"metric": "maxedCombatCount", "label": "Maxed Combat", "value": int(stats_data.get("maxedCombatCount", 0))},
+        {"metric": "maxedTotalCount", "label": "Maxed Total (2277)", "value": int(stats_data.get("maxedTotalCount", 0))},
+        {"metric": "maxed200msCount", "label": "200M Skills", "value": int(stats_data.get("maxed200msCount", 0))},
+        {"metric": "averageTotalLevel", "label": "Clan Avg Total Level", "value": int(avg_overall.get("level", 0))},
+        {"metric": "averageOverallExp", "label": "Clan Avg Overall XP", "value": int(avg_overall.get("experience", 0))},
+    ]
+    df_stats = pd.DataFrame(stats_rows)
+
+    return df_champions, df_stats
+
+
 def main():
+
     config = load_config()
     loguru_setup(config, PROJECT_ROOT)
     logger.info(f"{f' Starting {SCRIPT_NAME} ':=^80}")
@@ -1171,6 +1335,12 @@ def main():
 
         recent_achievements_report = generate_recent_achievements_report(df_broadcasts, config, run_warnings, drop_leavers)
         all_reports['recent_achievements'] = recent_achievements_report
+
+        champions_report, clan_stats_report = generate_clan_champions_reports(config, run_warnings)
+        if champions_report is not None:
+            all_reports['content_hiscores_summary'] = champions_report
+        if clan_stats_report is not None:
+            all_reports['clan_statistics_summary'] = clan_stats_report
 
 
         logger.info("Saving all transformed tables to the optimised database...")

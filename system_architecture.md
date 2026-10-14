@@ -227,6 +227,7 @@ A human-readable, append-only log for tracking all significant events and discre
    * **Caching & Rate-Limit Batching:** Group roster details (`/groups/{id}`) use a **5-hour cache TTL** (`WOM_GROUP_CACHE_TTL_SECONDS`), ensuring scheduled 4x daily auditor runs always receive fresh clan data while manual developer runs within 5 hours hit local cache.
    * **Rolling Non-Group Sync:** For linked accounts outside the clan group, lookups use a **3 to 7 day TTL** (`WOM_PLAYER_MIN_CACHE_TTL_SECONDS` to `WOM_PLAYER_MAX_CACHE_TTL_SECONDS`). On each auditor run, the system syncs the top **~9%** (`WOM_PLAYER_BATCH_PERCENT`) most stale accounts (aged $\ge$ 3 days), with a hard cutoff forcing a sync for any account aged $\ge$ 7 days.
    * **Name History Tracking:** As a background task, the Auditor saves the raw JSON of the group roster to a local SQLite database (`data/history.db`). It compares the current RSN against its local memory, and if a change is detected, fetches and stores the complete name change history for that specific player. The Auditor then serializes this history into a nested JSON string and syncs it to the `Name History` column in the Google Sheet. If it detects corrupted JSON in the sheet, it overwrites it with a fresh copy from the local database.
+   * **WOM Group Statistics Sync:** Weekly (or forced via `--refresh-stats`), the Auditor queries the Wise Old Man API endpoint `GET /groups/{id}/statistics`. This retrieves clan milestones (maxed total, maxed combat, 200m counts, average stats) and `#1 metricLeaders` across all 113+ game metrics (bosses, skills, clues, activities, and efficiency). This is atomically written to `shared_data/exports/wom_group_stats.json`.
 4. **Discord Data Syncing:** It queries the Discord API to update the `Discord Name` and `Discord Ranks` for existing members.
 5. **Auditing & Logging:** It cross-references the newly synced data against the target truth values, logging discrepancies to the `Audit_Log` tab for human review. Specific checks include:
    * **Rank Mismatch:** Checks if the assigned `Discord Ranks` correctly reflect the manually set `Clan Rank` according to the `Reference_Data`.
@@ -235,10 +236,16 @@ A human-readable, append-only log for tracking all significant events and discre
 ### **Data Handoff & Concurrency (Auditor -> ETL -> Dashboard)**
 
 To safely pass data from the backend to the public-facing dashboard, the system uses specific handoff techniques:
-1. **Atomic Auditor Export:** At the end of its daily run, the Auditor generates a JSON file (`roster_export.json`) representing the complete mapped roster (including system and admin flags). To prevent the ETL from reading a partially written file, the Auditor writes to a temporary file (`.tmp`) and uses an instantaneous OS-level rename to make the swap atomic.
-2. **Smart Lock Ingestion:** The ETL pipeline reads this JSON file. To prevent manual runs of the ETL colliding with scheduled cron runs, the entry-point script uses a file-based "Smart Lock" (Wait -> Retry -> Timeout).
+1. **Atomic Auditor Export:** At the end of its daily run, the Auditor generates `roster_export.json` (complete mapped roster with system/admin flags) and `wom_group_stats.json` (clan highscore records and milestones). To prevent the ETL from reading a partially written file, the Auditor writes to a temporary file (`.tmp`) and uses an instantaneous OS-level rename to make the swap atomic.
+2. **Smart Lock Ingestion:** The ETL pipeline reads these JSON files. To prevent manual runs of the ETL colliding with scheduled cron runs, the entry-point script uses a file-based "Smart Lock" (Wait -> Retry -> Timeout).
 3. **Blue/Green SQLite Reads:** SQLite locks the entire database file during write operations. To prevent the Dashboard UI from crashing or lagging while the ETL is writing data, the ETL employs a Blue/Green deployment strategy, writing to an alternate "Green" database (`_alt.db`). Once finished, the Streamlit app swaps to the new DB instantly.
-4. **Enriched Data Grouping:** To ensure that historical name changes and multi-account setups (alts) don't fracture a user's dashboard statistics, the ETL utilizes `4_enrich_roster.py` to map the volatile Game Names back to their static `Discord_ID` before standardizing the tables for the Dashboard.
+4. **Enriched Data Grouping & Champions Summary:** To ensure that historical name changes and multi-account setups (alts) don't fracture a user's dashboard statistics, the ETL utilizes `4_enrich_roster.py` to map volatile Game Names back to static `Discord_ID`. In `5_transform_data.py`, it correlates `wom_group_stats.json` with active clan members, outputting:
+   * `content_hiscores_summary`: 113+ records mapped to Discord user identities, game ranks, scores, and formatted display values.
+   * `clan_statistics_summary`: Milestone statistics (Maxed Total, Maxed Combat, 200M XP counts, etc.) for high-level clan health display.
+5. **Asset Synchronization & Offline Caching:** Assets are decoupled into `shared_config/assets/`:
+   * `metric_icons/`: 32x32 WebP sprite icons fetched from WOM CDN.
+   * `content_art/card/`: Transparent card artwork fetched from the OSRS Wiki MediaWiki API (`prop=pageimages`).
+   * A 30-day failure cooldown prevents hammering upstream APIs for newly released or unmapped content. Assets are encoded into Base64 and cached via `@st.cache_data` in Streamlit.
 
 
 ## **5. Standard Flags Dictionary**

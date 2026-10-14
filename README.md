@@ -95,6 +95,7 @@ To avoid storing copyrighted or heavy binary assets in this repository, you must
 
 1. **`items-complete.json`:** Required for the Clan Collection Log icons. Download it from the osrsreboxed-db repository and place it at `shared_config/assets/items-complete.json`.
 2. **Background Images:** For customized pages like the Hardcore Deaths page, place your background images (e.g., `1080px-Graveyard_of_Shadows.png`) in `shared_config/assets/Page_backgrounds/`.
+3. **Metric Icons & Content Artwork:** Used by the Clan Highscores page (`7_👑_Clan_Highscores.py`). Run `python standalone_scripts/sync_metric_assets.py` to populate `shared_config/assets/metric_icons/` and `shared_config/assets/content_art/card/` via the Wise Old Man CDN and OSRS Wiki.
 
 ## Attributions & Licensing
 
