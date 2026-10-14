@@ -13,6 +13,7 @@ services:
       - ./shared_data:/app/shared_data
       - ./shared_config:/app/shared_config
       - ./shared_secrets:/app/shared_secrets
+      - ./standalone_scripts:/app/standalone_scripts
 
   etl_pipeline:
     build:
@@ -28,6 +29,7 @@ services:
       - ./shared_data:/app/shared_data
       - ./shared_config:/app/shared_config
       - ./shared_secrets:/app/shared_secrets
+      - ./standalone_scripts:/app/standalone_scripts
 
   dashboard_ui:
     build:
