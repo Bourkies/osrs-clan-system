@@ -1,0 +1,34 @@
+# shared_config/hardcore_deaths.example.toml
+#
+# Custom Hardcore Death Overrides (Graveyard Epitaphs)
+# To use live overrides, copy this file to 'shared_config/hardcore_deaths.toml'.
+# 'hardcore_deaths.toml' is git-ignored so clan lore and private names stay local.
+#
+# Each entry is keyed by `id` (the raw_log_id from the broadcast database).
+# This guarantees that repeat deaths (GIM lives, Hardcore Worlds, recreated accounts)
+# are uniquely identified without ambiguity.
+#
+# Available Placeholder Tags in `message`:
+#   {player} or {username} -> Inserts the player's RSN (automatically bolded)
+#   {date}                 -> Inserts the fallen date (e.g. "28 Aug 2026")
+#   {lives}                -> Inserts group lives remaining (e.g. "1/4" or "Solo")
+#
+# Optional Links:
+#   link = "https://..."   -> Single proof link (Twitch 🎬, YouTube ▶️, Discord 💬, Screenshot 📸, etc.)
+#   links = [ "url1", "url2" ] -> Multiple proof links
+
+[[deaths]]
+id = 1234567
+username = "ExamplePlayer"
+message = "Too hardcore for an anti-dragon shield, {player} got cooked to Elvarg on {date}."
+link = "https://clips.twitch.tv/example_clip"
+
+[[deaths]]
+id = 1234568
+username = "GIM_Noob"
+message = "Fell asleep during Wintertodt. Cost the team life #{lives}."
+links = [
+  "https://youtube.com/watch?v=example",
+  "https://imgur.com/example_screenshot.png"
+]
+
