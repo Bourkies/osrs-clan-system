@@ -492,15 +492,52 @@ class GeneralRankMismatchAudit(BaseAudit):
         report_type = ""
         d_issues = ig_issues = unauth_alts = []
         target_rank = clan_rank
+        matched_new_rank = None
+        d_match = None
+        ig_match = None
         
         if clan_rank:
-            d_ok, d_issues, ig_ok, ig_issues, unauth_alts = evaluate(clan_rank)
-            if not d_ok and ig_ok:
-                is_mismatch = True; report_type = "discord"
-            elif d_ok and not ig_ok:
-                is_mismatch = True; report_type = "ingame"
-            elif not d_ok and not ig_ok:
-                is_mismatch = True; report_type = "general"
+            if clan_rank not in parsed_rules:
+                is_mismatch = True
+                report_type = "invalid_sheet_rank"
+            else:
+                d_ok, d_issues, ig_ok, ig_issues, unauth_alts = evaluate(clan_rank)
+                if not d_ok and ig_ok:
+                    is_mismatch = True; report_type = "discord"
+                elif d_ok and not ig_ok:
+                    is_mismatch = True; report_type = "ingame"
+                elif not d_ok and not ig_ok:
+                    is_mismatch = True
+                    # Check if Discord and In-Game align on a different rank (Promotion lag!)
+                    for r_name in parsed_rules:
+                        if r_name == clan_rank:
+                            continue
+                        r_d_ok, _, r_ig_ok, _, _ = evaluate(r_name)
+                        if r_d_ok and r_ig_ok:
+                            matched_new_rank = r_name
+                            report_type = "promotion_lag"
+                            target_rank = r_name
+                            break
+                    
+                    if not matched_new_rank:
+                        # Find individual platform matches to explain the discrepancy
+                        for r_name in parsed_rules:
+                            r_d_ok, _, _, _, _ = evaluate(r_name)
+                            if r_d_ok and not d_match:
+                                d_match = r_name
+                            _, _, r_ig_ok, _, _ = evaluate(r_name)
+                            if r_ig_ok:
+                                r_rule = parsed_rules.get(r_name, {})
+                                # Prefer base rank (empty all_roles) over specialized tracks
+                                if not ig_match:
+                                    ig_match = r_name
+                                elif parsed_rules.get(ig_match, {}).get('all_roles') and not r_rule.get('all_roles'):
+                                    ig_match = r_name
+                        
+                        if d_match and ig_match and d_match != ig_match:
+                            report_type = "platform_conflict"
+                        else:
+                            report_type = "general"
         else:
             guessed_rank = None
             for r_name, rule in parsed_rules.items():
@@ -540,9 +577,17 @@ class GeneralRankMismatchAudit(BaseAudit):
             
             rule = parsed_rules.get(target_rank)
             
+            def get_expected_discord(target_rule):
+                if not target_rule or not target_rule.get('req_roles'):
+                    return "None"
+                if webhook:
+                    return webhook.translate_roles(",".join(target_rule['req_roles']), role_map)
+                names = [role_map.get(r, f"Unknown ({r})") for r in target_rule['req_roles']]
+                return ", ".join(names) if names else "None"
+
             if report_type == "discord":
                 for issue in d_issues: report_line += f"> * {issue}\n"
-                expected_discord = webhook.translate_roles(",".join(rule['req_roles']), role_map) if rule else "None"
+                expected_discord = get_expected_discord(rule)
                 report_line += f">   * Expected Roles: {self.fmt_rank(expected_discord)}\n"
                 
             elif report_type == "ingame":
@@ -552,6 +597,17 @@ class GeneralRankMismatchAudit(BaseAudit):
                     report_line += f"> * Incorrect rank: {self.fmt_name(alt['rsn'])} {self.fmt_rank(alt['rank'])}\n"
                 expected_ig = self.fmt_rank(([rule['main_rank']] if rule and rule.get('main_rank') else []) + (rule['alt_ranks'] if rule else []))
                 report_line += f">   * Expected: {expected_ig}\n"
+
+            elif report_type == "promotion_lag":
+                report_line += f"> * 🚀 Promotion Lag: Discord & In-Game both match {self.fmt_rank(matched_new_rank)} (Sheet is {self.fmt_rank(clan_rank)})\n"
+                report_line += f">   * Expected Sheet Rank: {self.fmt_rank(matched_new_rank)}\n"
+
+            elif report_type == "platform_conflict":
+                report_line += f"> * ⚖️ Platform Conflict: Discord role suggests {self.fmt_rank(d_match)}, but In-Game accounts match {self.fmt_rank(ig_match)}\n"
+                report_line += f">   * Current Sheet Rank: {self.fmt_rank(clan_rank)}\n"
+
+            elif report_type == "invalid_sheet_rank":
+                report_line += f"> * ⚠️ Invalid Sheet Rank: {self.fmt_rank(clan_rank)} is not a recognized clan rank in Reference_Data\n"
                 
             elif report_type == "sheet_missing":
                 report_line += f"> * Sheet Rank is missing, but Discord and In-Game align.\n"
@@ -560,6 +616,10 @@ class GeneralRankMismatchAudit(BaseAudit):
             elif report_type == "general":
                 if not clan_rank and not managed_user_roles:
                     report_line += f"> * Unranked Member (Missing Sheet Rank and Discord Roles)\n"
+                elif d_match and not ig_match:
+                    report_line += f"> * Discord role suggests {self.fmt_rank(d_match)}, but In-Game accounts do not align\n"
+                elif ig_match and not d_match:
+                    report_line += f"> * In-Game accounts match {self.fmt_rank(ig_match)}, but Discord roles do not align\n"
                 else:
                     report_line += f"> * General Mismatch (Review all platforms)\n"
                 

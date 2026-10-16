@@ -19,6 +19,8 @@ LIGHT_BLUE = "\033[94m"
 
 load_dotenv(SHARED_SECRETS_DIR / ".env")
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+IGNORED_EVENT_RANKS_ENV = os.getenv('IGNORED_EVENT_RANKS', '')
+IGNORED_EVENT_RANKS = {r.strip().lower() for r in IGNORED_EVENT_RANKS_ENV.split(',') if r.strip()}
 
 if not SPREADSHEET_ID:
     print(f"{RED}Error: SPREADSHEET_ID not found in environment.{RESET}")
@@ -36,7 +38,127 @@ def modify_flags(current_str, add_flags=None, remove_flags=None):
                 flags.remove(f)
     return ", ".join(flags) if flags else ""
 
-def compute_rank_suggestions(member, valid_ranks, discord_req_to_rank, ig_main_to_rank, rank_to_exc_roles, role_map, target_clan_name):
+def diagnose_rank_mismatch(member, rank_rules, managed_roles, role_map, target_clan_name, ignored_event_ranks):
+    sheet_rank = str(member.get('Clan Rank', '')).strip()
+    user_roles = [r.strip().replace("'", "") for r in str(member.get('Discord Ranks', '')).split(',') if r.strip()]
+    
+    clans_list = [c.strip() for c in str(member.get('Account Clan', '')).split(',') if c.strip()]
+    ranks_list = [rk.strip() for rk in str(member.get('Game Ranks', '')).split(',') if rk.strip()]
+    rsns_list = [r.strip() for r in str(member.get('RSNs', '')).split(',') if r.strip()]
+
+    target_clan_accounts = []
+    for idx, clan in enumerate(clans_list):
+        if clan.lower() == target_clan_name.lower():
+            rsn = rsns_list[idx] if idx < len(rsns_list) else "Unknown"
+            rk = ranks_list[idx] if idx < len(ranks_list) else "Unknown"
+            target_clan_accounts.append((rsn, rk))
+
+    if not target_clan_accounts:
+        for idx in range(max(len(rsns_list), len(ranks_list))):
+            rsn = rsns_list[idx] if idx < len(rsns_list) else "Unknown"
+            rk = ranks_list[idx] if idx < len(ranks_list) else "Unknown"
+            target_clan_accounts.append((rsn, rk))
+
+    clean_target_ranks = [rk for _, rk in target_clan_accounts if rk and rk != 'Unknown']
+
+    rule = rank_rules.get(sheet_rank) if sheet_rank else None
+
+    # Check Discord compliance with current sheet rank
+    d_ok = True
+    d_issues = []
+    if rule:
+        missing_req = [r for r in rule['req_roles'] if r not in user_roles]
+        has_exc = [r for r in rule['exc_roles'] if r in user_roles]
+        auth_roles = set(rule['req_roles'] + rule['all_roles'])
+        unauth_managed = [r for r in user_roles if r in managed_roles and r not in auth_roles]
+        bad_roles = list(set(has_exc + unauth_managed))
+
+        if missing_req:
+            names = [role_map.get(r, f"Unknown ({r})") for r in missing_req]
+            d_issues.append(f"Missing required role(s): {', '.join(names)}")
+        if bad_roles:
+            names = [role_map.get(r, f"Unknown ({r})") for r in bad_roles]
+            d_issues.append(f"Unauthorized/extra role(s): {', '.join(names)}")
+        d_ok = (len(missing_req) == 0 and len(bad_roles) == 0)
+    else:
+        d_ok = False
+
+    # Check In-Game compliance with current sheet rank
+    ig_ok = True
+    main_rank_missing = False
+    unauth_alts = []
+    if rule:
+        main_rank = rule['main_rank']
+        allowed_all_lower = {r.lower() for r in ([main_rank] if main_rank else []) + rule['alt_ranks']}
+        has_ignored_event = any(rk.lower() in ignored_event_ranks for rk in clean_target_ranks)
+
+        if main_rank and main_rank.lower() not in [r.lower() for r in clean_target_ranks] and not has_ignored_event:
+            main_rank_missing = True
+            ig_ok = False
+
+        for rsn, rk in target_clan_accounts:
+            if rk != 'Unknown':
+                rk_lower = rk.lower()
+                if rk_lower not in allowed_all_lower and rk_lower not in ignored_event_ranks:
+                    unauth_alts.append((rsn, rk))
+
+        if unauth_alts:
+            ig_ok = False
+    else:
+        ig_ok = False
+
+    lines = []
+    if not sheet_rank:
+        lines.append(f"   {YELLOW}💡 Diagnosis: Unranked Member{RESET}")
+        lines.append(f"      ↳ Member is missing a Sheet Rank.")
+        return {'diagnosis_lines': lines, 'd_ok': False, 'ig_ok': False}
+
+    if not rule:
+        lines.append(f"   {RED}⚠️  Diagnosis: Unrecognized Sheet Rank '{sheet_rank}'{RESET}")
+        lines.append(f"      ↳ This rank is not defined in Reference_Data.")
+        lines.append(f"      ↳ {DARK_GRAY}Action: Update Sheet Rank to a valid clan rank.{RESET}")
+        return {'diagnosis_lines': lines, 'd_ok': False, 'ig_ok': False}
+
+    if d_ok and not ig_ok:
+        if main_rank_missing and len(target_clan_accounts) == 1:
+            rsn, rk = target_clan_accounts[0]
+            lines.append(f"   {YELLOW}💡 Diagnosis: In-Game Clan Rank Discrepancy{RESET}")
+            lines.append(f"      ↳ Sheet Rank & Discord agree on '{sheet_rank}'.")
+            lines.append(f"      ↳ In-Game: Account '{rsn}' is '{rk}' in {target_clan_name} (Expected: '{rule['main_rank']}').")
+            lines.append(f"      ↳ {DARK_GRAY}Action: Update rank in OSRS clan, or add 'Ignore Error: Rank Mismatch'.{RESET}")
+        elif unauth_alts and not main_rank_missing:
+            alt_descs = [f"'{r}' is '{rk}'" for r, rk in unauth_alts]
+            lines.append(f"   {YELLOW}💡 Diagnosis: Alt Account Rank Discrepancy{RESET}")
+            lines.append(f"      ↳ Sheet Rank & Discord agree on '{sheet_rank}'.")
+            lines.append(f"      ↳ In-Game Alt(s): {', '.join(alt_descs)} (Expected alt rank: '{rule['main_rank']}' or allowed alt).")
+            lines.append(f"      ↳ {DARK_GRAY}Action: Adjust alt rank in OSRS clan, or add 'Ignore Error: Rank Mismatch'.{RESET}")
+        else:
+            acc_descs = [f"'{r}' is '{rk}'" for r, rk in target_clan_accounts]
+            lines.append(f"   {YELLOW}💡 Diagnosis: In-Game Rank Mismatch{RESET}")
+            lines.append(f"      ↳ Sheet Rank & Discord agree on '{sheet_rank}'.")
+            lines.append(f"      ↳ In-Game accounts: {', '.join(acc_descs)} (Expected: '{rule.get('main_rank', 'N/A')}').")
+            lines.append(f"      ↳ {DARK_GRAY}Action: Fix rank in OSRS clan, or add 'Ignore Error: Rank Mismatch'.{RESET}")
+            
+    elif not d_ok and ig_ok:
+        lines.append(f"   {YELLOW}💡 Diagnosis: Discord Role Discrepancy{RESET}")
+        lines.append(f"      ↳ Sheet Rank & In-Game agree on '{sheet_rank}'.")
+        lines.append(f"      ↳ Discord issue: {', '.join(d_issues)}")
+        lines.append(f"      ↳ {DARK_GRAY}Action: Adjust roles in Discord, or add 'Ignore Error: Rank Mismatch'.{RESET}")
+
+    elif d_ok and ig_ok:
+        lines.append(f"   {GREEN}✅ Diagnosis: Everything Currently Aligns!{RESET}")
+        lines.append(f"      ↳ Sheet Rank, Discord roles, and In-Game accounts currently match.")
+        lines.append(f"      ↳ {DARK_GRAY}This warning flag will be automatically cleared on the next audit/sync (press 's' to refresh).{RESET}")
+
+    elif not d_ok and not ig_ok:
+        lines.append(f"   {CYAN}🚀 Diagnosis: Sheet Rank Out of Date / Promotion Lag{RESET}")
+        lines.append(f"      ↳ Sheet Rank is currently '{sheet_rank}'.")
+        lines.append(f"      ↳ {DARK_GRAY}Discord roles and In-Game ranks suggest a rank update.{RESET}")
+
+    return {'diagnosis_lines': lines, 'd_ok': d_ok, 'ig_ok': ig_ok}
+
+def compute_rank_suggestions(member, valid_ranks, rank_rules, discord_req_to_rank, ig_main_to_rank, role_map, target_clan_name):
+    current_sheet_rank = str(member.get('Clan Rank', '')).strip()
     d_ranks_raw = [r.strip().replace("'", "") for r in str(member.get('Discord Ranks', '')).split(',') if r.strip()]
     
     clans_list = [c.strip() for c in str(member.get('Account Clan', '')).split(',') if c.strip()]
@@ -53,39 +175,68 @@ def compute_rank_suggestions(member, valid_ranks, discord_req_to_rank, ig_main_t
     if not target_game_ranks:
         target_game_ranks = [rk for rk in ranks_list if rk and rk != 'Unknown']
 
-    suggestions = set()
     reasons = {}
-    invalid_ranks = set()
+    candidate_ranks = set()
 
     for dr in d_ranks_raw:
         if dr in discord_req_to_rank:
             for cr in discord_req_to_rank[dr]:
-                suggestions.add(cr)
+                candidate_ranks.add(cr)
                 role_name = role_map.get(dr, f"Role ID: {dr}")
                 reasons.setdefault(cr, []).append(f"Discord Req '{role_name}'")
-
-        for cr in valid_ranks:
-            if dr in rank_to_exc_roles.get(cr, []):
-                invalid_ranks.add(cr)
 
     for ir in target_game_ranks:
         if ir.lower() in ig_main_to_rank:
             for cr in ig_main_to_rank[ir.lower()]:
-                suggestions.add(cr)
+                candidate_ranks.add(cr)
                 reasons.setdefault(cr, []).append(f"Main In-Game '{ir}'")
 
-    suggestions = suggestions - invalid_ranks
+    filtered_ranks = set()
+    for cr in candidate_ranks:
+        # Never suggest updating to the exact rank the user already has on the sheet
+        if cr == current_sheet_rank:
+            continue
+        exc_roles = rank_rules.get(cr, {}).get('exc_roles', [])
+        if any(dr in exc_roles for dr in d_ranks_raw):
+            continue
+        filtered_ranks.add(cr)
 
-    perfect_matches = {
-        r for r in suggestions 
+    def score_rank(r):
+        r_reasons = reasons.get(r, [])
+        has_d_req = any("Discord Req" in res for res in r_reasons)
+        has_ig = any("Main In-Game" in res for res in r_reasons)
+        
+        score = 0
+        if has_d_req and has_ig:
+            score = 100
+        elif has_d_req:
+            score = 50
+        elif has_ig:
+            score = 25
+            rule = rank_rules.get(r, {})
+            req_roles = rule.get('req_roles', [])
+            all_roles = rule.get('all_roles', [])
+            # Priority to ranks whose required Discord roles are satisfied by member
+            if req_roles and all(rr in d_ranks_raw for rr in req_roles):
+                score += 10
+            # Priority to standard base ranks (no extra allowed roles)
+            if not all_roles:
+                score += 5
+                
+        order_idx = valid_ranks.index(r) if r in valid_ranks else 999
+        return (-score, order_idx)
+
+    sorted_candidates = sorted(filtered_ranks, key=score_rank)
+
+    perfect_matches = [
+        r for r in sorted_candidates 
         if any("Discord Req" in res for res in reasons.get(r, [])) 
         and any("Main In-Game" in res for res in reasons.get(r, []))
-    }
+    ]
     if perfect_matches:
-        suggestions = perfect_matches
+        sorted_candidates = perfect_matches
 
-    sorted_suggestions = [r for r in valid_ranks if r in suggestions]
-    return sorted_suggestions, reasons
+    return sorted_candidates, reasons
 
 def prompt_rank_picker(valid_ranks, suggestions, reasons):
     print(f"\n{CYAN}--- Clan Rank Selector ---{RESET}")
@@ -181,6 +332,7 @@ def main():
     discord_req_to_rank = {}
     ig_main_to_rank = {}
     rank_to_exc_roles = {}
+    rank_rules = {}
     managed_roles = set()
     all_req_roles = set()
     for row in ref_records:
@@ -188,11 +340,20 @@ def main():
         if not clan_rank:
             continue
         valid_ranks.append(clan_rank)
-        req_roles = [r.strip() for r in str(row.get('Required Discord Roles', '')).split(',') if r.strip()]
+        req_roles = [r.strip().replace("'", "") for r in str(row.get('Required Discord Roles', '')).split(',') if r.strip()]
         all_req_roles.update(req_roles)
-        all_roles = [r.strip() for r in str(row.get('Allowed Discord Roles', '')).split(',') if r.strip()]
-        exc_roles = [r.strip() for r in str(row.get('Excluded Discord Roles', '')).split(',') if r.strip()]
+        all_roles = [r.strip().replace("'", "") for r in str(row.get('Allowed Discord Roles', '')).split(',') if r.strip()]
+        exc_roles = [r.strip().replace("'", "") for r in str(row.get('Excluded Discord Roles', '')).split(',') if r.strip()]
         main_rank = str(row.get('Main In-Game Rank', '')).strip()
+        alt_ranks = [r.strip() for r in str(row.get('Allowed Alt Ranks', '')).split(',') if r.strip()]
+
+        rank_rules[clan_rank] = {
+            'req_roles': req_roles,
+            'all_roles': all_roles,
+            'exc_roles': exc_roles,
+            'main_rank': main_rank,
+            'alt_ranks': alt_ranks
+        }
 
         for dr in req_roles:
             discord_req_to_rank.setdefault(dr, []).append(clan_rank)
@@ -409,12 +570,19 @@ def main():
                     })
 
                 if cat_id == 5:
+                    diag = diagnose_rank_mismatch(
+                        member, rank_rules, managed_roles, role_map, target_clan_name, IGNORED_EVENT_RANKS
+                    )
+                    if diag.get('diagnosis_lines'):
+                        for d_line in diag['diagnosis_lines']:
+                            print(d_line)
+
                     suggestions, reasons = compute_rank_suggestions(
-                        member, valid_ranks, discord_req_to_rank, ig_main_to_rank,
-                        rank_to_exc_roles, role_map, target_clan_name
+                        member, valid_ranks, rank_rules, discord_req_to_rank, ig_main_to_rank,
+                        role_map, target_clan_name
                     )
                     rank_actions = []
-                    for rank in suggestions[:2]:
+                    for rank in suggestions[:3]:
                         reason_summary = ", ".join(dict.fromkeys(reasons.get(rank, [])))
                         rank_actions.append({
                             "label": f"🎯 Update Sheet Rank to '{rank}' ⭐ {DARK_GRAY}(Matches: {reason_summary}){RESET}",
