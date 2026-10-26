@@ -302,18 +302,41 @@ def generate_suggestions(roster_data=None, rank_rules=None):
                 logger.debug(f"  └─ Skipping: Already holds {target_rank} (or higher) in {platforms_at_or_above}/3 ecosystems.")
                 continue # User already holds this rank (or higher) in at least 2/3 ecosystems
         
-        # --- History Tracking with Wildcard Support ---
+        # --- History Tracking with Wildcard & Anomaly Resilience ---
         # Traverse history backwards from the most recent month.
-        # We maintain their rank streak as long as the DB shows their true_rank OR a Wildcard.
+        # Streak is maintained if:
+        #   1. true_rank was present in the month (even if an alt or brief rank change occurred)
+        #   2. target_rank was present in the month (promotion lag / transition month)
+        #   3. only Wildcard / event / joke ranks were seen
+        #   4. inactive month (no ranks seen)
+        #   5. single-month temporary anomaly bridged if preceding history had true_rank
         achieved_month = records[-1]['month']
-        for rec in reversed(records):
-            rec_rank = get_highest_rank(rec['ranks'])
+        anomaly_bridge_available = True
+        
+        for i in range(len(records) - 1, -1, -1):
+            rec = records[i]
+            month_ranks = set([r.strip() for r in rec['ranks'].split(',') if r.strip() and r.strip() != 'None'])
             
-            if rec_rank == true_rank or rec_rank == "Wildcard":
-                achieved_month = rec['month']
-            elif rec_rank is None:
+            if not month_ranks:
                 # No ranks recorded at all (e.g. inactive month) - skip over it to see if streak existed before gap
                 continue
+                
+            rec_highest = get_highest_rank(rec['ranks'])
+            
+            if true_rank in month_ranks or target_rank in month_ranks or rec_highest == "Wildcard":
+                achieved_month = rec['month']
+                anomaly_bridge_available = True
+            elif anomaly_bridge_available and i > 0:
+                # Check if nearest active historical month had true_rank (temporary 1-month anomaly bridge)
+                prev_rec = next((records[k] for k in range(i - 1, -1, -1) if set([r.strip() for r in records[k]['ranks'].split(',') if r.strip() and r.strip() != 'None'])), None)
+                if prev_rec:
+                    prev_ranks = set([r.strip() for r in prev_rec['ranks'].split(',') if r.strip() and r.strip() != 'None'])
+                    if true_rank in prev_ranks or target_rank in prev_ranks:
+                        logger.debug(f"  └─ Tolerating 1-month rank anomaly in {rec['month']} (seen: {month_ranks}) bridged to {prev_rec['month']}")
+                        achieved_month = rec['month']
+                        anomaly_bridge_available = False
+                        continue
+                break
             else:
                 # Streak broken by an explicitly different progression rank
                 break
