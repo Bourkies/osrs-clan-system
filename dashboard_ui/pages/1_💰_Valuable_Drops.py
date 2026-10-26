@@ -2,7 +2,6 @@
 
 import streamlit as st
 import pandas as pd
-import toml
 import random
 from pathlib import Path
 import Streamlit_utils
@@ -14,15 +13,9 @@ current_script_directory = Path(__file__).resolve().parent
 st.set_page_config(page_title="Valuable Drops", page_icon="💰", layout="wide")
 Streamlit_utils.inject_custom_css()
 
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        texts_path = current_script_directory.parent / 'dashboard_texts.toml'
-        return toml.load(texts_path)
-    except Exception as e:
-        st.error(f"Failed to load dashboard_texts.toml: {e}")
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return Streamlit_utils.load_dashboard_texts()
 
 Streamlit_utils.display_page_header(
     title="💰 Valuable Drops",

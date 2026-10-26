@@ -9,7 +9,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from pathlib import Path
 import os
-import toml
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 import html
 
 # --- Theme Configuration ---
@@ -266,6 +269,19 @@ def get_last_updated_timestamp() -> datetime | None:
         if df_meta['last_updated_utc'].iloc[0] is not None:
             return pd.to_datetime(df_meta['last_updated_utc'].iloc[0], utc=True)
     return None
+
+@st.cache_data(ttl=300)
+def load_dashboard_texts() -> dict:
+    """Loads and caches text snippets from dashboard_texts.toml using tomllib."""
+    try:
+        texts_path = Path(__file__).resolve().parent / 'dashboard_texts.toml'
+        if texts_path.exists():
+            with open(texts_path, 'rb') as f:
+                return tomllib.load(f)
+        return {}
+    except Exception as e:
+        st.error(f"Failed to load dashboard_texts.toml: {e}")
+        return {}
 
 @st.cache_data(ttl=300)
 def load_dashboard_config() -> dict:

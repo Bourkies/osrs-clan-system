@@ -3,7 +3,6 @@
 import streamlit as st
 import pandas as pd
 import Streamlit_utils as su
-import toml
 from pathlib import Path
 
 current_script_directory = Path(__file__).resolve().parent
@@ -13,14 +12,9 @@ su.inject_custom_css()
 
 # --- Helper Functions ---
 
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        return toml.load(current_script_directory.parent / 'dashboard_texts.toml')
-    except Exception as e:
-        st.error(f"Failed to load dashboard_texts.toml: {e}")
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return su.load_dashboard_texts()
 
 # --- Main Page Execution ---
 su.display_page_header(

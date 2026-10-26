@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 import Streamlit_utils
 import random
-import toml
 from datetime import datetime, timezone
 from pathlib import Path
 import html
@@ -16,14 +15,9 @@ Streamlit_utils.inject_custom_css()
 
 # --- Helper Functions ---
 
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        return toml.load(current_script_directory.parent / 'dashboard_texts.toml')
-    except Exception as e:
-        st.error(f"Failed to load dashboard_texts.toml: {e}")
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return Streamlit_utils.load_dashboard_texts()
 
 # --- Main Page Execution ---
 texts = load_texts()

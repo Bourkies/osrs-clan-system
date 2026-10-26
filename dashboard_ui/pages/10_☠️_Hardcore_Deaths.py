@@ -4,7 +4,10 @@ import streamlit as st
 import pandas as pd
 import random
 import Streamlit_utils
-import toml
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 from pathlib import Path
 import html
 import base64
@@ -405,7 +408,8 @@ def load_custom_deaths() -> dict:
             return {}
             
     try:
-        data = toml.load(file_path)
+        with open(file_path, "rb") as f:
+            data = tomllib.load(f)
         deaths_list = data.get("deaths", [])
         mapping = {}
         for entry in deaths_list:
@@ -419,24 +423,9 @@ def load_custom_deaths() -> dict:
         st.warning(f"Could not load custom deaths from {file_path.name}: {e}")
         return {}
 
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        current_script_directory = Path(__file__).resolve().parent
-        possible_toml_paths = [
-            current_script_directory.parent / 'dashboard_texts.toml',
-            current_script_directory / 'dashboard_texts.toml',
-            Path('.') / 'dashboard_texts.toml',
-        ]
-        
-        for toml_path in possible_toml_paths:
-            if toml_path.exists():
-                return toml.load(toml_path)
-                
-        return {}
-    except Exception as e:
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return Streamlit_utils.load_dashboard_texts()
 
 @st.cache_data(ttl=300)
 def load_hc_deaths():

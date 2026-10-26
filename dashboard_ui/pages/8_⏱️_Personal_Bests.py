@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 import random
 import Streamlit_utils
-import toml
 from pathlib import Path
 import json
 import html
@@ -16,16 +15,9 @@ Streamlit_utils.inject_custom_css()
 
 
 # --- Functions ---
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        # Adjust the path to correctly locate dashboard_texts.toml in the parent directory
-        current_script_directory = Path(__file__).resolve().parent
-        return toml.load(current_script_directory.parent / 'dashboard_texts.toml')
-    except Exception as e:
-        st.error(f"Failed to load dashboard_texts.toml: {e}")
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return Streamlit_utils.load_dashboard_texts()
 
 def display_hall_of_fame(df_pbs, texts):
     """Calculates and displays the players with the most records from the provided dataframe."""

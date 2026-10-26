@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 import random
 import Streamlit_utils
-import toml
 from pathlib import Path
 import html
 import re
@@ -14,14 +13,9 @@ current_script_directory = Path(__file__).resolve().parent
 
 st.set_page_config(page_title="Recent Achievements", page_icon="🏆", layout="wide")
 
-@st.cache_data(ttl=300)
 def load_texts():
-    """Loads text snippets from the TOML file."""
-    try:
-        return toml.load(current_script_directory.parent / 'dashboard_texts.toml')
-    except Exception as e:
-        st.error(f"Failed to load dashboard_texts.toml: {e}")
-        return {}
+    """Loads text snippets from dashboard_texts.toml."""
+    return Streamlit_utils.load_dashboard_texts()
 
 def get_achievement_message(row, texts):
     """Gets the formatted message for an achievement and applies custom colors."""
