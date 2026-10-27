@@ -345,9 +345,9 @@ else:
                 if not sort_items_alpha and group_name in item_orders:
                     item_order_list = item_orders.get(group_name, [])
                     df_group['Item_Name'] = pd.Categorical(df_group['Item_Name'], categories=item_order_list, ordered=True)
-                    df_group.sort_values('Item_Name', inplace=True)
+                    df_group = df_group.sort_values('Item_Name')
                 else:
-                    df_group.sort_values('Item_Name', inplace=True)
+                    df_group = df_group.sort_values('Item_Name')
                 
                 # --- Card Display Logic ---
                 items_in_group = df_group.to_dict('records')

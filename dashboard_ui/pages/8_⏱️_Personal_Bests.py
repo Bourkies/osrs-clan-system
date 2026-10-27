@@ -407,7 +407,7 @@ else:
 
             df_pbs_recent = df_pbs_recent.dropna(subset=['Timestamp_DT'])
             df_pbs_recent = df_pbs_recent[df_pbs_recent['Timestamp_DT'] > pd.Timestamp.min.replace(tzinfo=timezone.utc)]
-            df_pbs_recent.sort_values(by='Timestamp_DT', ascending=False, inplace=True)
+            df_pbs_recent = df_pbs_recent.sort_values(by='Timestamp_DT', ascending=False)
             
             if not df_pbs_recent.empty:
                 Streamlit_utils.display_event_feed(
@@ -445,10 +445,10 @@ else:
                 
                 if final_order:
                     df_group['Task'] = pd.Categorical(df_group['Task'], categories=final_order, ordered=True)
-                    df_group.sort_values('Task', inplace=True)
+                    df_group = df_group.sort_values('Task')
             else:
                 # Apply alphabetical order
-                df_group.sort_values('Task', inplace=True)
+                df_group = df_group.sort_values('Task')
 
             # --- Display records as cards in a responsive grid ---
             card_html_list = []

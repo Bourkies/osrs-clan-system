@@ -440,7 +440,7 @@ def load_hc_deaths():
         else:
             df_deaths['New_Group_Lives'] = df_deaths['New_Group_Lives'].replace({"": None, pd.NA: None})
 
-        df_deaths.sort_values(by='Timestamp', ascending=False, inplace=True)
+        df_deaths = df_deaths.sort_values(by='Timestamp', ascending=False)
         return df_deaths
     except Exception as e:
         st.error(f"Could not load the Hardcore Graveyard report. Error: {e}")

@@ -289,7 +289,7 @@ class PBPosterClient(discord.Client):
                     # Filter for records with a date (excludes historical ones without dates)
                     df_recent = self.pb_df[self.pb_df['Date'].notna()].copy()
                     if not df_recent.empty:
-                        df_recent.sort_values(by='Date', ascending=False, inplace=True)
+                        df_recent = df_recent.sort_values(by='Date', ascending=False)
                         top_recent = df_recent.head(recent_count)
                         
                         recent_lines = []

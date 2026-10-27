@@ -621,7 +621,7 @@ def get_chart_data_for_period(df_timeseries, selected_period_label, dashboard_co
         return pd.DataFrame()
         
     df_filtered_by_freq['Date'] = pd.to_datetime(df_filtered_by_freq['Date'], utc=True)
-    df_filtered_by_freq.sort_values('Date', inplace=True)
+    df_filtered_by_freq = df_filtered_by_freq.sort_values('Date')
 
     if period_suffix == 'All_Time':
         df_all_time = df_filtered_by_freq.copy()
@@ -844,7 +844,7 @@ def display_dynamic_timeseries(df: pd.DataFrame, date_col: str, value_col: str, 
         else:
             y_label = 'GP'
     
-    cumulative_sums.rename(columns={'Value': y_label}, inplace=True)
+    cumulative_sums = cumulative_sums.rename(columns={'Value': y_label})
     
     # Plot using Altair to cleanly embed the title and style the axes
     chart = alt.Chart(cumulative_sums).mark_line(

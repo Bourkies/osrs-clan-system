@@ -148,7 +148,7 @@ def get_records_for_period(df, start_date=None, end_date=None):
     df_copy = df.copy()
     if 'Timestamp' not in df_copy.columns: return pd.DataFrame()
     df_copy['Timestamp'] = pd.to_datetime(df_copy['Timestamp'], errors='coerce', utc=True)
-    df_copy.dropna(subset=['Timestamp'], inplace=True)
+    df_copy = df_copy.dropna(subset=['Timestamp'])
     
     if start_date: df_copy = df_copy[df_copy['Timestamp'] >= start_date]
     if end_date: df_copy = df_copy[df_copy['Timestamp'] < end_date]
@@ -345,13 +345,13 @@ def generate_leaderboard_reports(df_chat, df_broadcasts, config, periods, run_wa
             
             if group_by_col == raw_col and raw_col in df_summary.columns:
                 df_summary[original_group_by] = df_summary[raw_col]
-                df_summary.drop(columns=[raw_col], inplace=True)
+                df_summary = df_summary.drop(columns=[raw_col])
             elif group_by_col == ent_col and ent_col in df_summary.columns:
                 if entity_to_name:
                     df_summary[original_group_by] = df_summary[ent_col].map(entity_to_name).fillna(df_summary[ent_col])
                 else:
                     df_summary[original_group_by] = df_summary[ent_col]
-                df_summary.drop(columns=[ent_col], inplace=True)
+                df_summary = df_summary.drop(columns=[ent_col])
                 
             if original_group_by in df_summary.columns:
                 cols = [original_group_by] + [c for c in df_summary.columns if c != original_group_by]
@@ -418,7 +418,7 @@ def generate_timeseries_reports(df_source, config, run_warnings, global_drop_lea
         return reports
 
     df_source['Timestamp'] = pd.to_datetime(df_source['Timestamp'], errors='coerce', utc=True)
-    df_source.dropna(subset=['Timestamp'], inplace=True)
+    df_source = df_source.dropna(subset=['Timestamp'])
 
     for rc in report_configs:
         try:
@@ -569,7 +569,7 @@ def generate_collection_log_report(df_broadcasts, config, periods, run_warnings,
             df_item_counts[col_name] = 0
         else:
             period_counts = df_period.groupby('Parsed_Item_Name')['Item_Quantity'].sum().reset_index()
-            period_counts.rename(columns={'Parsed_Item_Name': 'Item_Name', 'Item_Quantity': col_name}, inplace=True)
+            period_counts = period_counts.rename(columns={'Parsed_Item_Name': 'Item_Name', 'Item_Quantity': col_name})
             df_item_counts = pd.merge(df_item_counts, period_counts, on='Item_Name', how='left')
 
     df_item_counts['Historical_Count'] = df_item_counts['Item_Name'].map(historical_counts).fillna(0)
@@ -579,7 +579,7 @@ def generate_collection_log_report(df_broadcasts, config, periods, run_warnings,
     else:
         df_item_counts['All_Time_Count'] = df_item_counts['Historical_Count']
     
-    df_item_counts.drop(columns=['Historical_Count'], inplace=True)
+    df_item_counts = df_item_counts.drop(columns=['Historical_Count'])
     df_item_counts = df_item_counts.fillna(0).astype({col: int for col in df_item_counts.columns if '_Count' in col})
 
     # 4. Build the final report by mapping items to their groups
@@ -615,7 +615,7 @@ def generate_collection_log_report(df_broadcasts, config, periods, run_warnings,
 
     # 6. Merge the structure with the counts
     df_summary = pd.merge(df_final_structure, df_item_counts, on='Item_Name', how='left')
-    df_summary.fillna(0, inplace=True)
+    df_summary = df_summary.fillna(0)
     
 
     for col in df_summary.columns:
@@ -884,7 +884,7 @@ def generate_personal_bests_report(df_broadcasts, config, run_warnings, use_enri
             return float('inf') if is_empty_historical else calculate_ticks(val_str)
 
     df_all_pbs['sort_value'] = df_all_pbs.apply(get_sort_value, axis=1)
-    df_all_pbs.dropna(subset=['Task_Name', 'sort_value'], inplace=True)
+    df_all_pbs = df_all_pbs.dropna(subset=['Task_Name', 'sort_value'])
 
     final_records = {}
     for task_name, task_group_df in df_all_pbs.groupby('Task_Name'):
@@ -1007,7 +1007,7 @@ def generate_recent_achievements_report(df_broadcasts, config, run_warnings, glo
     df_maxed_combat['Broadcast_Type'] = 'Maxed Combat'
 
     df_combined = pd.concat([df_source, df_maxed_99, df_maxed_combat])
-    df_combined.sort_values(by='Timestamp', ascending=False, inplace=True)
+    df_combined = df_combined.sort_values(by='Timestamp', ascending=False)
     df_recent = df_combined.groupby('Broadcast_Type').head(limit_per_type)
     
     logger.info(f"--> Generated recent achievements report with {len(df_recent)} entries.")
