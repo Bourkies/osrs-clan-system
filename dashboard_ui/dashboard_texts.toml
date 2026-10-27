@@ -367,3 +367,42 @@ group_status_lost_messages = [
     "🛻 On {date}, {player} drove the Hardcore bus... straight into a ditch. Team status: wrecked.",
     "🪦 The dream died with {player} on {date}. What a beautiful disaster. 10/10 would not trust again."
 ]
+
+[cabbage_patch]
+[cabbage_patch.top_cabbage_messages]
+rank_1 = [
+    "🥇 🥬 Praise Brassica Prime! **{player}** opened the chest expecting a mega-rare and was blessed with **{count}** crispy cabbages.",
+    "🥇 🥗 Head Chef of the Clan! **{player}** has gathered **{count}** cabbages from the raid chest. Time to open a salad bar.",
+    "🥇 🥦 The Cabbage King! **{player}** is single-handedly solving world hunger with **{count}** cabbages straight from the raid.",
+    "🥇 💀 Purple light? Nah mate, just **{player}** pulling their **{count}**th cabbage. Better luck next raid!",
+    "🥇 🚜 **{player}** didn't raid for weapons, they raided for the agricultural grind! **{count}** cabbages harvested."
+]
+rank_2 = [
+    "🥈 🥬 Runner-up farmer! **{player}** got trolled with **{count}** cabbages from the raid chest.",
+    "🥈 🥗 **{player}** is keeping it leafy green with **{count}** raid cabbages.",
+    "🥈 😭 Another raid, another cabbage. **{player}** cries into a pile of **{count}** leaves.",
+    "🥈 🛒 **{player}** raided like a champion and left with **{count}** cabbages. Straight into the compost bin."
+]
+rank_3 = [
+    "🥉 🥬 **{player}** took the cabbage bait **{count}** times. Almost a full coleslaw!",
+    "🥉 🐛 A caterpillar would be proud. **{player}** munching on **{count}** raid cabbages.",
+    "🥉 📦 At least it wasn't an empty chest? **{player}** scores **{count}** cabbages.",
+    "🥉 🥣 **{player}** got served cabbage soup **{count}** times by the raid chest."
+]
+
+[raids_leaderboard]
+[raids_leaderboard.top_raider_messages]
+rank_1 = [
+    "🥇 👑 The Raid Overlord! **{player}** sits atop the throne with **{count}** purples/uniques.",
+    "🥇 🔮 RNGesus has chosen a favourite: **{player}** with **{count}** raid drops!",
+    "🥇 💰 Filthy rich and spooned to the gills. **{player}** holds **{count}** raid purples."
+]
+rank_2 = [
+    "🥈 ⚔️ Right behind the top raider! **{player}** secured **{count}** raid drops.",
+    "🥈 🛡️ A certified raider. **{player}** pulled **{count}** shiny purples."
+]
+rank_3 = [
+    "🥉 🗡️ Respectable loot bag! **{player}** claims **{count}** raid purples.",
+    "🥉 ✨ Keep sending them! **{player}** has stacked **{count}** raid drops."
+]
+
