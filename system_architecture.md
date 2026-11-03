@@ -230,8 +230,13 @@ A human-readable, append-only log for tracking all significant events and discre
    * **WOM Group Statistics Sync:** Weekly (or forced via `--refresh-stats`), the Auditor queries the Wise Old Man API endpoint `GET /groups/{id}/statistics`. This retrieves clan milestones (maxed total, maxed combat, 200m counts, average stats) and `#1 metricLeaders` across all 113+ game metrics (bosses, skills, clues, activities, and efficiency). This is atomically written to `shared_data/exports/wom_group_stats.json`.
 4. **Discord Data Syncing:** It queries the Discord API to update the `Discord Name` and `Discord Ranks` for existing members.
 5. **Auditing & Logging:** It cross-references the newly synced data against the target truth values, logging discrepancies to the `Audit_Log` tab for human review. Specific checks include:
-   * **Rank Mismatch:** Checks if the assigned `Discord Ranks` correctly reflect the manually set `Clan Rank` according to the `Reference_Data`.
+   * **Rank Mismatch:** Checks if the assigned `Discord Ranks` and `Game Ranks` correctly reflect the manually set `Clan Rank` according to `Reference_Data`. Sub-classifies discrepancies into actionable diagnostics:
+     * **Discord / In-Game Discrepancy:** One platform matches the Sheet Rank while the other has missing/unauthorized roles or mismatched main/alt in-game ranks.
+     * **Promotion Lag:** Both Discord and In-Game align on a new rank, indicating the Google Sheet `Clan Rank` simply needs to be updated.
+     * **Platform Conflict:** Discord roles and In-Game ranks each match different valid clan ranks.
+     * **Invalid Sheet Rank:** The `Clan Rank` on the sheet does not exist in `Reference_Data`.
    * **Not in WOM Clan:** Flags if any account in the `Account Clan` list is 'Unknown' or belongs to a different clan.
+6. **Post-Audit Reporting:** Generates local Markdown reports (`activity_reporter.py`, `rank_up_suggester.py` with 1-month rank anomaly bridging, and `inactivity_monitor.py`) for leadership review.
 
 ### **Data Handoff & Concurrency (Auditor -> ETL -> Dashboard)**
 

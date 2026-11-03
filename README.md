@@ -52,6 +52,8 @@ Because this system relies heavily on Docker and host-mapped volumes, deploying 
 3. **Configure Shared Configs:** Copy any `.example.toml` files from `shared_config/` to their live counterparts (e.g., `config.example.toml` -> `config.toml`) and adjust settings as needed. This includes:
    * `config.toml`: Main configuration for the ETL pipeline.
    * `historical_collection_logs.toml`: Tracks initial clan collection log counts.
+   * `historical_personal_bests.toml`: Tracks legacy personal best records prior to webhook tracking.
+   * `hardcore_deaths.toml`: Optional custom epitaph overrides and media proof links (Twitch, YouTube, screenshots) for the Hardcore Graveyard (`10_☠️_Hardcore_Deaths.py`).
 4. **Start the Ecosystem:** Run Docker Compose to build the images and spin up the containers in the background.
    `docker compose up -d --build`
 
@@ -95,7 +97,8 @@ To avoid storing copyrighted or heavy binary assets in this repository, you must
 
 1. **`items-complete.json`:** Required for the Clan Collection Log icons. Download it from the osrsreboxed-db repository and place it at `shared_config/assets/items-complete.json`.
 2. **Background Images:** For customized pages like the Hardcore Deaths page, place your background images (e.g., `1080px-Graveyard_of_Shadows.png`) in `shared_config/assets/Page_backgrounds/`.
-3. **Metric Icons & Content Artwork:** Used by the Clan Highscores page (`7_👑_Clan_Highscores.py`). Run `python standalone_scripts/sync_metric_assets.py` to populate `shared_config/assets/metric_icons/` and `shared_config/assets/content_art/card/` via the Wise Old Man CDN and OSRS Wiki.
+3. **Metric Icons & Content Artwork:** Used by the Clan Highscores page (`7_👑_Clan_Highscores.py`). Run `python standalone_scripts/sync_metric_assets.py` (or `docker compose exec backend_auditor python standalone_scripts/sync_metric_assets.py`) to populate `shared_config/assets/metric_icons/` and `shared_config/assets/content_art/card/` via the Wise Old Man CDN and OSRS Wiki.
+4. **Custom Item Icons:** For custom raid/item icons on the Raids Leaderboard (`11_⚔️_Raids_Leaderboard.py`), place WebP item icons (e.g., `Twisted_bow.webp`) in `shared_config/assets/custom_icons/`.
 
 ## Attributions & Licensing
 

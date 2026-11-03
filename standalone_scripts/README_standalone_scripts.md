@@ -66,7 +66,11 @@ A specialized asset pipeline synchronizer for the **Clan Highscores** dashboard 
 
 #### **Execution**:
 ```bash
+# Local execution
 python standalone_scripts/sync_metric_assets.py
+
+# Or inside Docker
+docker compose exec backend_auditor python standalone_scripts/sync_metric_assets.py
 ```
 
 ---

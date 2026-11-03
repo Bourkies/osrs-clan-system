@@ -45,6 +45,9 @@ Fetch fresh in-game clan roster from WOM (fast ~1s, keeps player caches) without
 Fetch fresh in-game clan roster from WOM, sync database only (skip audits & webhook):
 `docker compose exec backend_auditor python backend_auditor/run_auditor.py --refresh-group --sync-only`
 
+Force refresh Wise Old Man clan group statistics (highscores, leaders, milestones):
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --refresh-stats`
+
 Force clear and refresh the entire Wise Old Man cache (all players & group):
 `docker compose exec backend_auditor python backend_auditor/run_auditor.py --force-wom`
 
@@ -53,6 +56,12 @@ Run full sync and audit, but DO NOT post to the Discord webhook:
 
 Sync Discord and WOM to the database, but skip audits completely:
 `docker compose exec backend_auditor python backend_auditor/run_auditor.py --sync-only`
+
+Skip external API syncs (Discord & WOM) and run audits on the current database:
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --audit-only`
+
+Skip external API syncs and run audits silently (no Discord webhook):
+`docker compose exec backend_auditor python backend_auditor/run_auditor.py --audit-only --no-webhook`
 
 **CLI Admin Tools:**
 Run the Account Linker (Fuzzy match unlinked accounts):
@@ -93,6 +102,17 @@ Run the Audit Resolver (Interactively resolve warning flags):
 
 ---
 
+## 🛠️ Standalone Scripts (Docker)
+*`standalone_scripts/` is mounted into both `backend_auditor` and `etl_pipeline` containers.*
+
+Sync Clan Highscores metric icons & Wiki card artwork:
+`docker compose exec backend_auditor python standalone_scripts/sync_metric_assets.py`
+
+Run the PB Inside Joke / tick distribution report:
+`docker compose exec etl_pipeline python standalone_scripts/pb_inside_joke_report.py`
+
+---
+
 ## 💻 Local Development (Non-Docker)
 If you are developing locally without Docker, make sure your Python Virtual Environment (`venv`) is activated.
 
@@ -113,11 +133,20 @@ Enable the env: `.\venv\Scripts\Activate.ps1`
 `python backend_auditor/run_auditor.py --force-wom`
 `python backend_auditor/run_auditor.py --no-webhook`
 `python backend_auditor/run_auditor.py --sync-only`
+`python backend_auditor/run_auditor.py --refresh-group --no-webhook`
+`python backend_auditor/run_auditor.py --refresh-group --sync-only`
+`python backend_auditor/run_auditor.py --refresh-stats`
+`python backend_auditor/run_auditor.py --audit-only`
+`python backend_auditor/run_auditor.py --audit-only --no-webhook`
 
 **CLI Admin Tools:**
 `python backend_auditor/account_linker.py`
 `python backend_auditor/rank_matcher.py` Note: 2-y-n
 `python backend_auditor/audit_resolver.py`
+
+**Standalone Scripts:**
+`python standalone_scripts/sync_metric_assets.py`
+`python standalone_scripts/pb_inside_joke_report.py`
 
 
 ### Running ETL Pipeline Locally
